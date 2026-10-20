@@ -68,6 +68,8 @@ public enum CommandTable {
         Command("CmdClose", "Close", .file, action: "performClose", [key("w", cmd)]),
         Command("CmdCloseCurrentDocument", "Close Document", .file, action: "closeDocument", [key("q")]),
         Command("CmdPrint", "Print…", .file, action: "printDocument", [key("p", cmd)]),
+        // Ctrl+D in Sumatra (⌘D adds a favorite here, as in Sumatra's mac table).
+        Command("CmdProperties", "Document Properties…", .file, action: "showProperties", [key("i", cmd)]),
 
         // Edit
         Command("CmdCopySelection", "Copy", .edit, action: "copy", [key("c", cmd)]),
@@ -129,6 +131,12 @@ public enum CommandTable {
         Command("CmdGoToLastPage", "Last Page", .go, action: "goToLastPage", [key(.down, cmd), key(.end)]),
         // ⌘G is Find Next on macOS (Sumatra's mac table agrees), so Go To Page is ⌥⌘G.
         Command("CmdGoToPage", "Go to Page…", .go, action: "goToPageNumber", [key("g", optCmd), key("g")]),
+        Command(
+            "CmdCommandPalette", "Command Palette…", .go, action: "showCommandPalette", [key("k", cmd), key(">")]),
+        Command("CmdNavigateTabs", "Go to Tab…", .go, action: "showPaletteTabs", [key("@")]),
+        Command("CmdNavigateHistory", "Go to Recent File…", .go, action: "showPaletteHistory", [key("#")]),
+        Command("CmdNavigateFavorites", "Go to Favorite…", .go, action: "showPaletteFavorites", [key("$")]),
+        Command("CmdNavigateTableOfContents", "Go to Bookmark…", .go, action: "showPaletteOutline", [key("%")]),
         Command("CmdNavigateBack", "Back", .go, action: "navigateBack", [key("[", cmd), key(.backspace)]),
         Command(
             "CmdNavigateForward", "Forward", .go, action: "navigateForward",

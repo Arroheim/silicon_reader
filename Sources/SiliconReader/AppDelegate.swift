@@ -52,6 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let canvas = windows.first?.canvas else { return finishSnapshot(error: "-find needs a document") }
                 canvas.find(query, forward: true)
             }
+            // `-printToPDF out.pdf` prints the document through the print path into a file.
+            if let path = UserDefaults.standard.string(forKey: "printToPDF") {
+                guard let controller = windows.first, let engine = controller.currentDocument?.engine,
+                    let window = controller.window
+                else { return finishSnapshot(error: "-printToPDF needs a document") }
+                let title = engine.url.lastPathComponent
+                PrintView.run(engine: engine, title: title, for: window, saveTo: URL(fileURLWithPath: path))
+            }
+            // `-palette text` opens the command palette filtered by `text`.
+            if let text = UserDefaults.standard.string(forKey: "palette") {
+                windows.first?.showPalette(nil, text: text)
+            }
             snapshotWhenSettled(to: URL(fileURLWithPath: output))
         }
     }
@@ -83,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let controller = windows.first else {
                     return finishSnapshot(error: "no window")
                 }
-                if controller.isSettled, thumbnails.isIdle, let png = controller.snapshotPNG() {
+                if controller.isSettled, thumbnails.isIdle, let png = Self.snapshotTarget(controller) {
                     do {
                         try png.write(to: output)
                         return finishSnapshot(error: nil)
@@ -95,6 +107,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             finishSnapshot(error: "pages did not finish rendering within \(timeout)")
         }
+    }
+
+    /// `-snapshotWindow palette|properties` captures that window instead of the document window.
+    private static func snapshotTarget(_ controller: MainWindowController) -> Data? {
+        let window: NSWindow? =
+            switch UserDefaults.standard.string(forKey: "snapshotWindow") {
+            case "palette": NSApp.windows.first { $0 is PalettePanel && $0.isVisible }
+            case "properties": NSApp.windows.first { $0.title == "Document Properties" && $0.isVisible }
+            default: controller.window
+            }
+        guard let view = window?.contentView?.superview ?? window?.contentView,
+            let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep.representation(using: .png, properties: [:])
     }
 
     private func finishSnapshot(error: String?) {
@@ -217,7 +244,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let openURLs = Set(windows.compactMap(\.documentURL))
         while let url = closedDocuments.popLast() {
             if !openURLs.contains(url) && FileManager.default.fileExists(atPath: url.path) {
-                return openFile(url)
+                openFile(url)
+                return
             }
         }
         NSSound.beep()
@@ -233,18 +261,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opens a document like SumatraPDF: an already open file gets focus, a
     /// home page is replaced in place, otherwise a new tab is added.
-    private func openFile(_ url: URL, from requester: MainWindowController? = nil) {
+    @discardableResult
+    private func openFile(_ url: URL, from requester: MainWindowController? = nil) -> MainWindowController? {
         if let existing = windows.first(where: { $0.documentURL == url }) {
             existing.window?.makeKeyAndOrderFront(nil)
-            return
+            return existing
         }
-        guard let engine = openEngine(url) else { return }
+        guard let engine = openEngine(url) else { return nil }
 
         let anchor = requester ?? keyController ?? windows.last
         if let anchor, anchor.isShowingHome {
             anchor.show(engine)
             anchor.window?.makeKeyAndOrderFront(nil)
-            return
+            return anchor
         }
         let controller = makeWindow()
         controller.show(engine)
@@ -252,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             anchorWindow.addTabbedWindow(window, ordered: .above)
         }
         controller.showWindow(nil)
+        return controller
     }
 
     /// Opens the engine, asking for a password as often as needed.
@@ -287,7 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: MainWindowHost {
-    func open(_ url: URL, from window: MainWindowController) {
+    func open(_ url: URL, from window: MainWindowController) -> MainWindowController? {
         openFile(url, from: window)
     }
 

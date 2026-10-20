@@ -1,18 +1,12 @@
 import AppKit
 import ReaderCore
 
-/// Selectors for toolbar/menu commands whose handlers arrive in later
-/// milestones. Until something in the responder chain implements them, AppKit
-/// shows their items disabled.
-@objc protocol PendingCommands {
-    func printDocument(_ sender: Any?)
-}
-
 /// What a window needs from the app: opening files and tracking closed ones.
 @MainActor
 protocol MainWindowHost: AnyObject {
-    /// Opens `url` the way a home page click or Open… does.
-    func open(_ url: URL, from window: MainWindowController)
+    /// Opens `url` the way a home page click or Open… does; returns the window showing it.
+    @discardableResult
+    func open(_ url: URL, from window: MainWindowController) -> MainWindowController?
     /// Opens the engine for `url`, asking for a password if needed.
     func openEngine(_ url: URL) -> (any DocumentEngine)?
     /// Opens `url` in a separate window showing `state`.
@@ -306,6 +300,130 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             try? await Task.sleep(for: .seconds(3))
             if self?.window?.subtitle == message { self?.window?.subtitle = "" }
         }
+    }
+
+    // MARK: - Print and properties
+
+    @objc func printDocument(_ sender: Any?) {
+        guard let engine = currentDocument?.engine, let window else { return }
+        PrintView.run(engine: engine, title: engine.url.lastPathComponent, for: window)
+    }
+
+    private var properties: PropertiesWindowController?
+
+    @objc func showProperties(_ sender: Any?) {
+        guard let engine = currentDocument?.engine else { return }
+        properties?.close()
+        let controller = PropertiesWindowController(engine: engine)
+        properties = controller
+        controller.showWindow(nil)
+    }
+
+    // MARK: - Command palette
+
+    @objc func showCommandPalette(_ sender: Any?) { showPalette(nil) }
+    @objc func showPaletteTabs(_ sender: Any?) { showPalette(.tabs) }
+    @objc func showPaletteHistory(_ sender: Any?) { showPalette(.history) }
+    @objc func showPaletteFavorites(_ sender: Any?) { showPalette(.favorites) }
+    @objc func showPaletteOutline(_ sender: Any?) { showPalette(.outline) }
+
+    /// Opens the palette; `text` pre-fills the filter (debug hook uses it).
+    func showPalette(_ prefix: PaletteQuery.Source?, text: String? = nil) {
+        guard let window else { return }
+        CommandPalette.show(items: paletteItems(), prefix: prefix, text: text, over: window)
+    }
+
+    /// Gathered while this window is key, so command availability is the document's.
+    private func paletteItems() -> [PaletteItem] {
+        var items: [PaletteItem] = []
+        let paletteCommands: Set<String> = [
+            "CmdCommandPalette", "CmdNavigateTabs", "CmdNavigateHistory", "CmdNavigateFavorites",
+            "CmdNavigateTableOfContents",
+        ]
+        for command in CommandTable.all where !paletteCommands.contains(command.id) {
+            let action = Selector("\(command.action):")
+            guard let target = availableTarget(for: action) else { continue }
+            items.append(
+                PaletteItem(
+                    source: .commands, title: command.title, detail: command.shortcuts.first?.display ?? "",
+                    symbol: "command", perform: { NSApp.sendAction(action, to: target, from: nil) }))
+        }
+
+        for controller in NSApp.windows.compactMap({ $0.windowController as? MainWindowController }) {
+            guard let url = controller.documentURL else { continue }
+            items.append(
+                PaletteItem(
+                    source: .tabs, title: url.lastPathComponent, detail: url.deletingLastPathComponent().path,
+                    symbol: "macwindow", perform: { controller.window?.makeKeyAndOrderFront(nil) }))
+        }
+
+        for record in library.recent(limit: 50) where FileManager.default.fileExists(atPath: record.path) {
+            let url = URL(fileURLWithPath: record.path)
+            items.append(
+                PaletteItem(
+                    source: .history, title: url.lastPathComponent, detail: url.deletingLastPathComponent().path,
+                    symbol: "clock", perform: { [weak self] in self.map { _ = $0.host?.open(url, from: $0) } }))
+        }
+
+        for favorite in library.favorites {
+            let url = URL(fileURLWithPath: favorite.path)
+            let detail = "\(url.lastPathComponent) · page \(favorite.page + 1)"
+            items.append(
+                PaletteItem(
+                    source: .favorites, title: favorite.name, detail: detail,
+                    symbol: "star", perform: { [weak self] in self?.openFavorite(favorite) }))
+        }
+
+        if let document = currentDocument {
+            func add(_ outline: [OutlineItem], depth: Int) {
+                for entry in outline {
+                    let page = entry.destination.flatMap { if case .page(let p, _) = $0 { p + 1 } else { nil } }
+                    let title = String(repeating: "  ", count: depth) + entry.title.trimmingCharacters(in: .whitespaces)
+                    if let destination = entry.destination {
+                        items.append(
+                            PaletteItem(
+                                source: .outline, title: title, detail: page.map { "page \($0)" } ?? "",
+                                symbol: "list.bullet.indent",
+                                perform: { [weak document] in document?.canvas.go(to: destination) }))
+                    }
+                    add(entry.children, depth: depth + 1)
+                }
+            }
+            add(document.engine.outline(), depth: 0)
+        }
+        return items
+    }
+
+    /// The object that would handle `action` from this window — its responder
+    /// chain, then the window controller, application and delegate — if its menu
+    /// validation agrees. Walked by hand so it works whether or not this window is key.
+    private func availableTarget(for action: Selector) -> AnyObject? {
+        var candidates: [AnyObject] = []
+        var responder: NSResponder? = window?.firstResponder
+        while let current = responder {
+            candidates.append(current)
+            responder = current.nextResponder
+        }
+        candidates += [self, NSApp] + (NSApp.delegate.map { [$0 as AnyObject] } ?? [])
+
+        guard let target = candidates.first(where: { $0.responds(to: action) }) else { return nil }
+        if let validator = target as? NSMenuItemValidation,
+            !validator.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: ""))
+        {
+            return nil
+        }
+        return target
+    }
+
+    private func openFavorite(_ favorite: Favorite) {
+        let url = URL(fileURLWithPath: favorite.path)
+        if documentURL == url {
+            canvas?.jump(toPage: favorite.page)
+            return
+        }
+        guard let target = host?.open(url, from: self) else { return }
+        // The new document lays out once its window appears; jump right after.
+        DispatchQueue.main.async { target.canvas?.jump(toPage: favorite.page) }
     }
 
     // MARK: - Presentation

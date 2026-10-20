@@ -43,7 +43,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
 
     private static let buttons: [NSToolbarItem.Identifier: Button] = [
         .open: Button(label: "Open", symbol: "folder", action: #selector(AppDelegate.openDocument(_:))),
-        .print: Button(label: "Print", symbol: "printer", action: #selector(PendingCommands.printDocument(_:))),
+        .print: Button(label: "Print", symbol: "printer", action: #selector(MainWindowController.printDocument(_:))),
         .previousPage: Button(
             label: "Previous Page", symbol: "chevron.up", action: #selector(DocumentView.goToPreviousPage(_:))),
         .nextPage: Button(label: "Next Page", symbol: "chevron.down", action: #selector(DocumentView.goToNextPage(_:))),

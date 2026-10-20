@@ -37,7 +37,10 @@ exits non-zero on failure. CI uses it as an end-to-end smoke check.
 runs never touch your own (`~/Library/Application Support/SiliconReader/`).
 Snapshot runs don't write per-file state or the session (each run starts the same);
 `-persist YES` turns that back on, and `-snapshotAfter 3` delays the capture, e.g. to
-change the open file and watch it reload. `-find text` searches before the capture.
+change the open file and watch it reload. `-find text` searches before the capture,
+`-palette text` opens the command palette (capture it with `-snapshotWindow palette`;
+`properties` works the same) and `-printToPDF out.pdf` prints through the print path
+into a file without any dialog.
 
 ## 🧱 Layout
 

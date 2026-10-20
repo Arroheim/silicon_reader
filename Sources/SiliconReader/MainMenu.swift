@@ -12,7 +12,7 @@ enum MainMenu {
             [
                 "CmdNewWindow", "CmdDuplicateInNewWindow", "CmdOpenFile", "CmdReopenLastClosedFile", "-",
                 "CmdOpenPrevFileInFolder", "CmdOpenNextFileInFolder", "-", "CmdSaveAs", "CmdReloadDocument", "-",
-                "CmdClose", "CmdCloseCurrentDocument", "-", "CmdPrint",
+                "CmdClose", "CmdCloseCurrentDocument", "-", "CmdProperties", "CmdPrint",
             ]
         ),
         (
@@ -37,8 +37,9 @@ enum MainMenu {
         (
             .go,
             [
-                "CmdGoToNextPage", "CmdGoToPrevPage", "CmdGoToFirstPage", "CmdGoToLastPage", "CmdGoToPage", "-",
-                "CmdNavigateBack", "CmdNavigateForward",
+                "CmdCommandPalette", "CmdNavigateTabs", "CmdNavigateHistory", "CmdNavigateFavorites",
+                "CmdNavigateTableOfContents", "-", "CmdGoToNextPage", "CmdGoToPrevPage", "CmdGoToFirstPage",
+                "CmdGoToLastPage", "CmdGoToPage", "-", "CmdNavigateBack", "CmdNavigateForward",
             ]
         ),
         (.favorites, ["CmdFavoriteAdd"]),
