@@ -4,17 +4,18 @@ import ReaderCore
 @MainActor
 final class DocumentWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
-    private let pageView: PageStackView
+    private let canvas: DocumentView
 
     init(engine: any DocumentEngine) {
-        pageView = PageStackView(engine: engine)
+        canvas = DocumentView(engine: engine)
 
-        let scrollView = NSScrollView()
+        let scrollView = CanvasScrollView()
         scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = PageStackView.canvasColor
-        scrollView.documentView = pageView
+        scrollView.backgroundColor = DocumentView.canvasColor
+        scrollView.documentView = canvas
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 1000),
@@ -30,12 +31,18 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+        window.initialFirstResponder = canvas
 
-        scrollView.contentView.postsFrameChangedNotifications = true
+        let clip = scrollView.contentView
+        clip.postsFrameChangedNotifications = true
+        clip.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
-            self, selector: #selector(clipViewDidResize),
-            name: NSView.frameDidChangeNotification, object: scrollView.contentView)
-        pageView.layoutPages(forWidth: scrollView.contentView.bounds.width)
+            self, selector: #selector(clipViewFrameChanged), name: NSView.frameDidChangeNotification, object: clip)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(clipViewBoundsChanged), name: NSView.boundsDidChangeNotification, object: clip)
+
+        canvas.onStateChange = { [weak self] in self?.updateSubtitle() }
+        canvas.viewportDidResize()
     }
 
     @available(*, unavailable)
@@ -43,7 +50,17 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) is not supported")
     }
 
-    var isSettled: Bool { pageView.isSettled }
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        window?.makeFirstResponder(canvas)
+    }
+
+    var isSettled: Bool { canvas.isSettled }
+
+    /// Sends a menu action straight to the canvas (debug hook), regardless of focus.
+    func perform(_ action: Selector) -> Bool {
+        NSApp.sendAction(action, to: canvas, from: nil)
+    }
 
     /// PNG of the window content as currently drawn.
     func snapshotPNG() -> Data? {
@@ -54,9 +71,17 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate {
         return rep.representation(using: .png, properties: [:])
     }
 
-    @objc private func clipViewDidResize(_ note: Notification) {
-        guard let clip = note.object as? NSClipView else { return }
-        pageView.layoutPages(forWidth: clip.bounds.width)
+    private func updateSubtitle() {
+        let zoom = Int(canvas.layout.zoomPercent.rounded())
+        window?.subtitle = "Page \(canvas.currentPage + 1) of \(canvas.pageCount) · \(zoom)%"
+    }
+
+    @objc private func clipViewFrameChanged(_ note: Notification) {
+        canvas.viewportDidResize()
+    }
+
+    @objc private func clipViewBoundsChanged(_ note: Notification) {
+        canvas.viewportDidScroll()
     }
 
     func windowWillClose(_ notification: Notification) {

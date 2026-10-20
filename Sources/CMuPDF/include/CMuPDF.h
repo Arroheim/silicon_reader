@@ -56,10 +56,15 @@ typedef struct {
     uint8_t *data;  /* RGB, 3 bytes per pixel, top-down */
 } sr_image;
 
-/* Renders a page at scale (1.0 == 72 dpi) on a white background.
-   Returns NULL on error; free with sr_image_free. */
-sr_image *sr_doc_render(sr_doc *doc, int page, float scale);
+/* Renders a page at scale (1.0 == 72 dpi) on a white background. region (in
+   page points) limits the output to that part of the page; NULL renders the
+   whole page. Returns NULL on error; free with sr_image_free. */
+sr_image *sr_doc_render(sr_doc *doc, int page, float scale, const sr_rect *region);
 void sr_image_free(sr_image *img);
+
+/* Bounding box of everything drawn on the page, in page points. Returns 0 on
+   success, -1 on error or for an empty page. */
+int sr_doc_content_box(sr_doc *doc, int page, sr_rect *box);
 
 /* ----- destinations ----- */
 

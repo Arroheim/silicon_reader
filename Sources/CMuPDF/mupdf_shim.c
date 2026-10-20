@@ -8,11 +8,60 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Parsed pages kept as display lists, so rendering a page in many tiles
+   interprets its content stream once. */
+#define SR_LIST_CACHE_SIZE 8
+
+typedef struct {
+    int page;
+    fz_display_list *list;
+    fz_rect bounds;
+    unsigned long long last_used;
+} list_slot;
+
 struct sr_doc {
     fz_context *ctx;
     fz_document *doc;
     pthread_mutex_t lock;
+    list_slot lists[SR_LIST_CACHE_SIZE];
+    unsigned long long tick;
 };
+
+/* Returns a cached display list for page (owned by the cache). Must be called
+   with the lock held, inside fz_try. */
+static fz_display_list *page_list(sr_doc *d, int page, fz_rect *bounds) {
+    list_slot *victim = &d->lists[0];
+    for (int i = 0; i < SR_LIST_CACHE_SIZE; i++) {
+        list_slot *slot = &d->lists[i];
+        if (slot->list && slot->page == page) {
+            slot->last_used = ++d->tick;
+            *bounds = slot->bounds;
+            return slot->list;
+        }
+        if (!slot->list || slot->last_used < victim->last_used) {
+            victim = slot;
+        }
+    }
+
+    fz_page *p = fz_load_page(d->ctx, d->doc, page);
+    fz_display_list *list = NULL;
+    fz_rect b;
+    fz_try(d->ctx) {
+        b = fz_bound_page(d->ctx, p);
+        list = fz_new_display_list_from_page(d->ctx, p);
+    }
+    fz_always(d->ctx) {
+        fz_drop_page(d->ctx, p);
+    }
+    fz_catch(d->ctx) {
+        fz_rethrow(d->ctx);
+    }
+
+    fz_drop_display_list(d->ctx, victim->list);
+    *victim = (list_slot){.page = page, .list = list, .bounds = b, .last_used = ++d->tick};
+    *bounds = b;
+    return list;
+}
 
 static os_log_t mupdf_log(void) {
     static os_log_t log;
@@ -47,6 +96,10 @@ static char *dup_string(const char *s) {
     return s ? strdup(s) : NULL;
 }
 
+static sr_rect to_rect(fz_rect r) {
+    return (sr_rect){r.x0, r.y0, r.x1, r.y1};
+}
+
 /* ----- document ----- */
 
 sr_doc *sr_doc_open(const char *path, char *err, size_t errlen) {
@@ -79,6 +132,9 @@ sr_doc *sr_doc_open(const char *path, char *err, size_t errlen) {
 void sr_doc_close(sr_doc *d) {
     if (d == NULL) {
         return;
+    }
+    for (int i = 0; i < SR_LIST_CACHE_SIZE; i++) {
+        fz_drop_display_list(d->ctx, d->lists[i].list);
     }
     fz_drop_document(d->ctx, d->doc);
     fz_drop_context(d->ctx);
@@ -189,26 +245,35 @@ int sr_doc_page_label(sr_doc *d, int page, char *buf, int size) {
     return rc;
 }
 
-sr_image *sr_doc_render(sr_doc *d, int page, float scale) {
+sr_image *sr_doc_render(sr_doc *d, int page, float scale, const sr_rect *region) {
     sr_image *img = NULL;
-    fz_page *p = NULL;
     fz_pixmap *pix = NULL;
     fz_device *dev = NULL;
 
     pthread_mutex_lock(&d->lock);
-    fz_var(p);
     fz_var(pix);
     fz_var(dev);
     fz_var(img);
     fz_try(d->ctx) {
-        p = fz_load_page(d->ctx, d->doc, page);
-        fz_matrix ctm = fz_scale(scale, scale);
-        fz_irect bbox = fz_round_rect(fz_transform_rect(fz_bound_page(d->ctx, p), ctm));
+        fz_rect bounds;
+        fz_display_list *list = page_list(d, page, &bounds);
+        // Page space for callers starts at the page box's top-left corner.
+        fz_matrix ctm = fz_concat(fz_translate(-bounds.x0, -bounds.y0), fz_scale(scale, scale));
+        fz_rect area = fz_transform_rect(bounds, ctm);
+        if (region) {
+            fz_rect r = fz_transform_rect(fz_make_rect(region->x0, region->y0, region->x1, region->y1),
+                                          fz_scale(scale, scale));
+            area = fz_intersect_rect(area, r);
+        }
+        fz_irect bbox = fz_round_rect(area);
+        if (fz_is_empty_irect(bbox)) {
+            fz_throw(d->ctx, FZ_ERROR_ARGUMENT, "empty render region");
+        }
 
         pix = fz_new_pixmap_with_bbox(d->ctx, fz_device_rgb(d->ctx), bbox, NULL, 0);
         fz_clear_pixmap_with_value(d->ctx, pix, 0xff);
         dev = fz_new_draw_device(d->ctx, fz_identity, pix);
-        fz_run_page(d->ctx, p, dev, ctm, NULL);
+        fz_run_display_list(d->ctx, list, dev, ctm, area, NULL);
         fz_close_device(d->ctx, dev);
 
         size_t size = (size_t)pix->stride * (size_t)pix->h;
@@ -222,7 +287,6 @@ sr_image *sr_doc_render(sr_doc *d, int page, float scale) {
     fz_always(d->ctx) {
         fz_drop_device(d->ctx, dev);
         fz_drop_pixmap(d->ctx, pix);
-        fz_drop_page(d->ctx, p);
     }
     fz_catch(d->ctx) {
         fz_report_error(d->ctx);
@@ -239,6 +303,36 @@ void sr_image_free(sr_image *img) {
     }
     free(img->data);
     free(img);
+}
+
+int sr_doc_content_box(sr_doc *d, int page, sr_rect *box) {
+    int rc = -1;
+    fz_device *dev = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(dev);
+    fz_var(rc);
+    fz_try(d->ctx) {
+        fz_rect bounds;
+        fz_display_list *list = page_list(d, page, &bounds);
+        fz_rect content = fz_empty_rect;
+        dev = fz_new_bbox_device(d->ctx, &content);
+        fz_run_display_list(d->ctx, list, dev, fz_translate(-bounds.x0, -bounds.y0), fz_infinite_rect, NULL);
+        fz_close_device(d->ctx, dev);
+        content = fz_intersect_rect(content, fz_make_rect(0, 0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0));
+        if (!fz_is_empty_rect(content)) {
+            *box = to_rect(content);
+            rc = 0;
+        }
+    }
+    fz_always(d->ctx) {
+        fz_drop_device(d->ctx, dev);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        rc = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return rc;
 }
 
 /* ----- destinations ----- */
@@ -332,10 +426,6 @@ void sr_outline_free(sr_outline *root) {
 }
 
 /* ----- links ----- */
-
-static sr_rect to_rect(fz_rect r) {
-    return (sr_rect){r.x0, r.y0, r.x1, r.y1};
-}
 
 sr_links *sr_doc_page_links(sr_doc *d, int page) {
     sr_links *result = NULL;

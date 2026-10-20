@@ -40,10 +40,19 @@ public protocol DocumentEngine: AnyObject, Sendable {
 
     /// Renders a page so that one point maps to `scale` pixels.
     ///
-    /// Engines that can only render at discrete resolutions (DjVu) return the
-    /// closest image that is not smaller than requested; callers draw the
-    /// result into the target rect rather than relying on its exact size.
-    func render(page index: Int, scale: CGFloat) throws -> CGImage
+    /// `region` (page points) limits the output to part of the page when
+    /// `supportsRegionRendering` is true; other engines always return the
+    /// whole page. Engines that can only render at discrete resolutions (DjVu)
+    /// return the closest image that is not smaller than requested; callers
+    /// draw the result into the target rect rather than relying on its size.
+    func render(page index: Int, scale: CGFloat, region: CGRect?) throws -> CGImage
+
+    /// Whether `render` honors `region`, so callers can render in tiles.
+    var supportsRegionRendering: Bool { get }
+
+    /// Bounding box of the page's visible content (page points), for fit
+    /// content zoom. Nil when unknown; callers then use the whole page.
+    func contentBox(at index: Int) -> CGRect?
 
     /// Table of contents; empty when the document has none.
     func outline() -> [OutlineItem]
@@ -54,6 +63,10 @@ public protocol DocumentEngine: AnyObject, Sendable {
 }
 
 extension DocumentEngine {
+    public func render(page index: Int, scale: CGFloat) throws -> CGImage {
+        try render(page: index, scale: scale, region: nil)
+    }
+
     func checkPage(_ index: Int) throws {
         guard (0..<pageCount).contains(index) else { throw EngineError.invalidPage(index) }
     }

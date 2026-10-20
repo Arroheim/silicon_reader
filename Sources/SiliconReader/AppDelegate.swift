@@ -20,8 +20,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
 
         // Debug hook: `-snapshot out.png` saves the first window once it has
-        // finished rendering and quits. Used for smoke checks without GUI automation.
+        // finished rendering and quits. `-actions a,b` first sends those menu
+        // actions (e.g. viewFacing,zoomFitWidth) down the responder chain.
+        // Used for smoke checks without GUI automation.
         if let output = UserDefaults.standard.string(forKey: "snapshot") {
+            let actions = UserDefaults.standard.string(forKey: "actions")?.split(separator: ",") ?? []
+            for action in actions {
+                let selector = Selector("\(action.trimmingCharacters(in: .whitespaces)):")
+                guard let controller = windows.first, controller.perform(selector) else {
+                    return finishSnapshot(error: "action \(action) was not handled")
+                }
+            }
             snapshotWhenSettled(to: URL(fileURLWithPath: output))
         } else if windows.isEmpty && !openedAtLaunch {
             openDocument(nil)

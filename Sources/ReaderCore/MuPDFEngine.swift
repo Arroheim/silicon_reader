@@ -61,9 +61,19 @@ public final class MuPDFEngine: DocumentEngine, @unchecked Sendable {
         return label == String(index + 1) ? nil : label
     }
 
-    public func render(page index: Int, scale: CGFloat) throws -> CGImage {
+    public var supportsRegionRendering: Bool { true }
+
+    public func render(page index: Int, scale: CGFloat, region: CGRect?) throws -> CGImage {
         try checkPage(index)
-        guard let raw = sr_doc_render(doc, Int32(index), Float(scale)) else {
+        let raw: UnsafeMutablePointer<sr_image>?
+        if let region {
+            var area = sr_rect(
+                x0: Float(region.minX), y0: Float(region.minY), x1: Float(region.maxX), y1: Float(region.maxY))
+            raw = sr_doc_render(doc, Int32(index), Float(scale), &area)
+        } else {
+            raw = sr_doc_render(doc, Int32(index), Float(scale), nil)
+        }
+        guard let raw else {
             throw EngineError.renderFailed(page: index)
         }
         defer { sr_image_free(raw) }
@@ -76,6 +86,13 @@ public final class MuPDFEngine: DocumentEngine, @unchecked Sendable {
             throw EngineError.renderFailed(page: index)
         }
         return image
+    }
+
+    public func contentBox(at index: Int) -> CGRect? {
+        guard (0..<pageCount).contains(index) else { return nil }
+        var box = sr_rect()
+        guard sr_doc_content_box(doc, Int32(index), &box) == 0 else { return nil }
+        return Self.rect(box)
     }
 
     // MARK: - Navigation

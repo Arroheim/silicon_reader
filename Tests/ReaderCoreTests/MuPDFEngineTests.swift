@@ -31,6 +31,41 @@ struct MuPDFEngineTests {
         #expect(bottomRight == (255, 255, 255), "expected white, got \(bottomRight)")
     }
 
+    @Test("renders only the requested region")
+    func regionRender() throws {
+        let engine = try MuPDFEngine(url: try TestPDF.make(pageSizes: [CGSize(width: 200, height: 100)]))
+
+        let red = Pixels(try engine.render(page: 0, scale: 2, region: CGRect(x: 0, y: 0, width: 100, height: 50)))
+        let white = Pixels(try engine.render(page: 0, scale: 2, region: CGRect(x: 100, y: 50, width: 100, height: 50)))
+
+        #expect(engine.supportsRegionRendering)
+        #expect(red.width == 200 && red.height == 100)
+        #expect(red.rgb(x: 10, y: 10).r > 200 && red.rgb(x: 190, y: 90).g < 60, "whole tile is red")
+        #expect(white.rgb(x: 10, y: 10) == (255, 255, 255) && white.rgb(x: 190, y: 90) == (255, 255, 255))
+    }
+
+    @Test("clips regions to the page")
+    func regionClipped() throws {
+        let engine = try MuPDFEngine(url: try TestPDF.make(pageSizes: [CGSize(width: 200, height: 100)]))
+
+        let image = try engine.render(page: 0, scale: 1, region: CGRect(x: 150, y: 50, width: 512, height: 512))
+
+        #expect(image.width == 50 && image.height == 50)
+        #expect(throws: EngineError.renderFailed(page: 0)) {
+            try engine.render(page: 0, scale: 1, region: CGRect(x: 500, y: 500, width: 10, height: 10))
+        }
+    }
+
+    @Test("measures the content box for fit content")
+    func contentBox() throws {
+        let engine = try MuPDFEngine(url: try TestPDF.make(pageSizes: [CGSize(width: 200, height: 100)]))
+        let blank = try MuPDFEngine(url: try TestPDF(pages: [.init()]).write())
+
+        let box = try #require(engine.contentBox(at: 0))
+        #expect(box.isApproximately(CGRect(x: 0, y: 0, width: 100, height: 50)))
+        #expect(blank.contentBox(at: 0) == nil)
+    }
+
     @Test("rejects out-of-range pages")
     func invalidPage() throws {
         let engine = try MuPDFEngine(url: try TestPDF.make(pageSizes: [CGSize(width: 100, height: 100)]))

@@ -105,7 +105,14 @@ public final class DjVuEngine: DocumentEngine, @unchecked Sendable {
         return title.isEmpty || title == id || title == String(index + 1) ? nil : title
     }
 
-    public func render(page index: Int, scale: CGFloat) throws -> CGImage {
+    /// djvudec decodes whole pages only.
+    public var supportsRegionRendering: Bool { false }
+
+    /// Not computed: SumatraPDF derives it from a rendered bitmap, which is
+    /// costly for large scans. Fit content falls back to the page box.
+    public func contentBox(at index: Int) -> CGRect? { nil }
+
+    public func render(page index: Int, scale: CGFloat, region: CGRect?) throws -> CGImage {
         let geo = try pixelGeometry(at: index)
         let subsample = Self.subsample(dpi: geo.dpi, scale: scale)
         guard let raw = djvu_page_render(doc, Int32(index), Int32(subsample)) else {

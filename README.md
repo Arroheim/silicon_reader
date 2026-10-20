@@ -27,12 +27,12 @@ full Xcode is not needed.
 | `make test` | Unit tests (swift-testing) |
 | `make lint` / `make format` | `swift format` check / rewrite |
 | `make app` | Release build wrapped into an ad-hoc signed `build/SiliconReader.app` |
-| `make smoke` | Opens sample PDF and DjVu in the app and saves window snapshots to `build/smoke/` |
+| `make smoke` | Opens sample PDF and DjVu in several view modes and saves window snapshots to `build/smoke/` |
 | `make run FILE=…` | Builds the app and opens a document |
 
-`SiliconReader -snapshot out.png doc.pdf` renders a document, saves the window to a
-PNG once all visible pages are drawn and exits non-zero on failure. CI uses it
-as an end-to-end smoke check.
+`SiliconReader -snapshot out.png [-actions viewFacing,zoomFitWidth] doc.pdf` runs the
+given menu actions, saves the window to a PNG once all visible pages are drawn and
+exits non-zero on failure. CI uses it as an end-to-end smoke check.
 
 ## 🧱 Layout
 

@@ -49,15 +49,20 @@ app: ## Assemble an ad-hoc signed .app bundle (release build)
 	$(MAKE) build CONFIG=release
 	scripts/bundle-app.sh "$$(swift build -c release --show-bin-path)/$(APP_NAME)" "$(APP)"
 
-SMOKE_DOCS := Tests/ReaderCoreTests/Fixtures/lizard2002.djvu \
+SMOKE_DOCS := Tests/ReaderCoreTests/Fixtures/djvu2spec.djvu \
 	"$(MUPDF_SRC)/thirdparty/lcms2/doc/LittleCMS2.19 tutorial.pdf"
+# Each entry is name=comma-separated canvas actions run before the snapshot.
+SMOKE_VIEWS := default= book=viewBook,zoomFitWidth paged=toggleContinuous,goToNextPage,rotateRight \
+	zoomed=zoomActualSize,zoomIn,zoomIn,zoomIn
 
-smoke: app ## Open sample PDF/DjVu in the app and save window snapshots to build/smoke
+smoke: app ## Open sample PDF/DjVu in several view modes and save snapshots to build/smoke
 	mkdir -p $(BUILD_DIR)/smoke
 	for doc in $(SMOKE_DOCS); do \
-		out="$(BUILD_DIR)/smoke/$$(basename "$$doc" | tr ' ' '_').png"; \
-		"$(APP)/Contents/MacOS/$(APP_NAME)" -snapshot "$$out" "$$doc"; \
-		echo "ok $$out"; \
+		for view in $(SMOKE_VIEWS); do \
+			out="$(BUILD_DIR)/smoke/$$(basename "$$doc" | tr ' ' '_')-$${view%%=*}.png"; \
+			"$(APP)/Contents/MacOS/$(APP_NAME)" -snapshot "$$out" -actions "$${view#*=}" "$$doc"; \
+			echo "ok $$out"; \
+		done; \
 	done
 
 run: app ## Build and launch the app (FILE=path/to/doc to open a document)
