@@ -43,6 +43,27 @@ final class DocumentView: NSView {
     /// Points per second; negative scrolls up.
     private var autoScrollSpeed: CGFloat = 40
 
+    // Text: see DocumentView+Text.swift.
+    let textStore: TextStore
+    var selection: TextSelection?
+    var searchQuery: String?
+    var matchCase = false
+    var currentMatch: TextMatch?
+    var searchTask: Task<Void, Never>?
+    var linkCache: [Int: [PageLink]] = [:]
+    var drag = DragState.none
+    /// Search progress and results for the window ("Searching page 5 of 39…").
+    var onSearchStatus: (String?) -> Void = { _ in }
+
+    enum DragState {
+        case none
+        case selecting
+        /// Hand-panning: where the mouse went down (window coords) and the scroll origin then.
+        case panning(start: CGPoint, origin: CGPoint)
+        /// Mouse went down on a link; follows it unless the mouse moves.
+        case link(PageLink, start: CGPoint)
+    }
+
     /// Called after the current page, zoom or layout mode changes.
     var onStateChange: (() -> Void)?
     /// Pointer position over a page (page index, point in page space), nil when off the pages.
@@ -58,6 +79,7 @@ final class DocumentView: NSView {
         pageSizes = (0..<engine.pageCount).map { (try? engine.pageSize(at: $0)) ?? CGSize(width: 612, height: 792) }
         contentBoxes = Array(repeating: nil, count: engine.pageCount)
         renderer = TileRenderer(engine: engine, maxConcurrent: engine.supportsRegionRendering ? 2 : 3)
+        textStore = TextStore(engine: engine)
         layout = .empty
         super.init(frame: .zero)
         renderer.onTileReady = { [weak self] key in self?.tileReady(key) }
@@ -71,14 +93,14 @@ final class DocumentView: NSView {
     // MARK: - Geometry
 
     private var clipView: NSClipView? { enclosingScrollView?.contentView }
-    private var viewport: CGRect { clipView?.bounds ?? bounds }
+    var viewport: CGRect { clipView?.bounds ?? bounds }
 
     var pageCount: Int { pageSizes.count }
 
     /// True once every visible page is drawn at full resolution and nothing is rendering.
-    var isSettled: Bool { drewEverythingWanted && renderer.isIdle }
+    var isSettled: Bool { drewEverythingWanted && renderer.isIdle && searchTask == nil }
 
-    private func geometry(_ page: Int) -> PageGeometry? {
+    func geometry(_ page: Int) -> PageGeometry? {
         layout.geometry(forPage: page, pageSize: pageSizes[page])
     }
 
@@ -151,7 +173,7 @@ final class DocumentView: NSView {
         }
     }
 
-    private func nearestPage(to point: CGPoint) -> Int? {
+    func nearestPage(to point: CGPoint) -> Int? {
         var best: (page: Int, distance: CGFloat)?
         for (page, frame) in layout.pageFrames.enumerated() {
             guard let frame else { continue }
@@ -173,7 +195,7 @@ final class DocumentView: NSView {
 
     // MARK: - Scrolling
 
-    private func scroll(to origin: CGPoint) {
+    func scroll(to origin: CGPoint) {
         guard let clipView, let scrollView = enclosingScrollView else { return }
         let maxX = max(0, layout.canvasSize.width - viewport.width)
         let maxY = max(0, layout.canvasSize.height - viewport.height)
@@ -182,7 +204,7 @@ final class DocumentView: NSView {
         scrollView.reflectScrolledClipView(clipView)
     }
 
-    private func scroll(by delta: CGPoint) {
+    func scroll(by delta: CGPoint) {
         scroll(to: CGPoint(x: viewport.minX + delta.x, y: viewport.minY + delta.y))
     }
 
@@ -452,6 +474,7 @@ final class DocumentView: NSView {
             for case (let key, let image?) in ready {
                 drawPageImage(image, pageRect: tileRect(key, pageSize: pageSize), geometry: geo, in: ctx)
             }
+            drawTextHighlights(page: page, geometry: geo, in: ctx)
             if invertsColors {
                 // white - color: black text on white becomes white on black
                 ctx.setBlendMode(.difference)
@@ -522,6 +545,7 @@ final class DocumentView: NSView {
             case .pageDown?: .pageDown
             case .home?: .home
             case .end?: .end
+            case .f3?: .function(3)
             case .f5?: .function(5)
             case .f6?: .function(6)
             case .f11?: .function(11)
@@ -532,9 +556,12 @@ final class DocumentView: NSView {
         return event.charactersIgnoringModifiers.flatMap { Shortcut.fromEvent(characters: $0, modifiers: modifiers) }
     }
 
-    /// Esc leaves presentation, auto-scroll or full screen, in that order.
+    /// Esc clears selection and search, then leaves auto-scroll, presentation
+    /// or full screen, in that order.
     override func cancelOperation(_ sender: Any?) {
-        if autoScrollTask != nil {
+        if selection != nil || searchQuery != nil {
+            clearTextState()
+        } else if autoScrollTask != nil {
             stopAutoScroll()
         } else if isPresenting {
             NSApp.sendAction(#selector(MainWindowController.togglePresentation(_:)), to: nil, from: self)
@@ -544,8 +571,17 @@ final class DocumentView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard isPresenting else { return super.mouseDown(with: event) }
-        goToRow(offset: 1)
+        guard !isPresenting else { return goToRow(offset: 1) }
+        window?.makeFirstResponder(self)
+        beginMouseInteraction(event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        continueMouseInteraction(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        endMouseInteraction(event)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -564,14 +600,25 @@ final class DocumentView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        guard let page = layout.pageFrames.firstIndex(where: { $0?.contains(point) == true }),
-            let geo = geometry(page)
-        else { return onPointerMoved(nil) }
-        onPointerMoved((page, geo.pagePoint(fromCanvas: point)))
+        guard let hit = pageHit(at: point) else {
+            NSCursor.arrow.set()
+            return onPointerMoved(nil)
+        }
+        updateCursor(page: hit.page, point: hit.point)
+        onPointerMoved(hit)
     }
 
     override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
         onPointerMoved(nil)
+    }
+
+    /// The page under a canvas point and the point in that page's space.
+    func pageHit(at point: CGPoint) -> (page: Int, point: CGPoint)? {
+        guard let page = layout.pageFrames.firstIndex(where: { $0?.contains(point) == true }),
+            let geo = geometry(page)
+        else { return nil }
+        return (page, geo.pagePoint(fromCanvas: point))
     }
 
     /// Left/right scroll when the canvas is wider than the window, otherwise
@@ -760,6 +807,7 @@ extension DocumentView: NSMenuItemValidation, NSToolbarItemValidation {
         case #selector(fitWidthContinuous(_:)): zoom == .fitWidth && mode.continuous
         case #selector(fitPageSingle(_:)): zoom == .fitPage && !mode.continuous && mode.arrangement == .single
         case #selector(invertColors(_:)): invertsColors
+        case #selector(toggleMatchCase(_:)): matchCase
         case #selector(toggleAutoScroll(_:)): autoScrollTask != nil
         default: nil
         }
@@ -773,6 +821,7 @@ extension DocumentView: NSMenuItemValidation, NSToolbarItemValidation {
         case #selector(zoomOut(_:)): layout.zoomPercent > Zoom.minPercent + 0.01
         case #selector(navigateBack(_:)): canGoBack
         case #selector(navigateForward(_:)): canGoForward
+        case #selector(copy(_:)), #selector(zoomToSelection(_:)): !(selection?.isEmpty ?? true)
         default: true
         }
     }

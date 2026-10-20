@@ -27,6 +27,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     private let pageField = NSTextField()
     private let pageTotal = NSTextField(labelWithString: "")
     private let zoomBox = NSComboBox()
+    private var searchItem: NSSearchToolbarItem?
 
     init(windowController: MainWindowController) {
         self.windowController = windowController
@@ -61,7 +62,6 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         .zoomOut: Button(
             label: "Zoom Out", symbol: "minus.magnifyingglass", action: #selector(DocumentView.zoomOut(_:))),
         .zoomIn: Button(label: "Zoom In", symbol: "plus.magnifyingglass", action: #selector(DocumentView.zoomIn(_:))),
-        .find: Button(label: "Find", symbol: "magnifyingglass", action: #selector(PendingCommands.showFind(_:))),
     ]
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -95,6 +95,14 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             return viewItem(identifier, label: "Page", view: pageStack())
         case .zoom:
             return viewItem(identifier, label: "Zoom", view: zoomBox)
+        case .find:
+            let item = NSSearchToolbarItem(itemIdentifier: identifier)
+            item.label = "Find"
+            item.paletteLabel = "Find"
+            item.preferredWidthForSearchField = 200
+            configure(item.searchField)
+            searchItem = item
+            return item
         default:
             return nil
         }
@@ -161,6 +169,37 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
                 UserInput.fitNames.first { $0.zoom == canvas.zoom }?.name
                 ?? UserInput.format(percent: canvas.layout.zoomPercent)
         }
+    }
+
+    // MARK: - Search field
+
+    /// Return finds the next match, ⇧Return the previous one; the field keeps
+    /// focus so Return can be pressed repeatedly, as in SumatraPDF's find box.
+    private func configure(_ field: NSSearchField) {
+        field.placeholderString = "Find"
+        field.sendsWholeSearchString = true
+        field.sendsSearchStringImmediately = false
+        field.target = self
+        field.action = #selector(searchEntered(_:))
+        let menu = NSMenu(title: "Find Options")
+        menu.addItem(withTitle: "Match Case", action: #selector(DocumentView.toggleMatchCase(_:)), keyEquivalent: "")
+        field.searchMenuTemplate = menu
+    }
+
+    @objc private func searchEntered(_ sender: NSSearchField) {
+        guard let canvas = windowController?.canvas else { return }
+        let backward = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+        if sender.stringValue.isEmpty {
+            canvas.clearTextState()
+        } else {
+            canvas.find(sender.stringValue, forward: !backward)
+        }
+    }
+
+    func focusSearch() -> Bool {
+        guard let item = searchItem, item.searchField.window != nil else { return false }
+        item.beginSearchInteraction()
+        return true
     }
 
     /// Puts the cursor in the page box; false if it isn't on the toolbar.

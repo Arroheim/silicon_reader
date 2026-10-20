@@ -16,11 +16,19 @@ enum MainMenu {
             ]
         ),
         (
+            .edit,
+            [
+                "std:undo", "std:redo", "-", "std:cut", "CmdCopySelection", "std:paste", "CmdSelectAll", "-",
+                "CmdFindFirst", "CmdFindNext", "CmdFindPrev", "CmdFindMatchCase",
+            ]
+        ),
+        (
             .view,
             [
                 "CmdToggleBookmarks", "CmdToggleToolbar", "-", "CmdSinglePageView", "CmdFacingView", "CmdBookView",
                 "CmdToggleContinuousView", "-", "CmdZoomFitPage", "CmdZoomActualSize", "CmdZoomFitWidth",
-                "CmdZoomFitContent", "CmdZoomIn", "CmdZoomOut", "CmdZoomCustom", "CmdToggleZoom", "-",
+                "CmdZoomFitContent", "CmdZoomIn", "CmdZoomOut", "CmdZoomCustom", "CmdZoomToSelection",
+                "CmdToggleZoom", "-",
                 "CmdRotateLeft", "CmdRotateRight", "-", "CmdInvertColors", "CmdTogglePageInfo",
                 "CmdToggleCursorPosition", "CmdToggleAutomaticallyScroll", "-", "CmdToggleFullscreen",
                 "CmdTogglePresentationMode",
@@ -47,6 +55,8 @@ enum MainMenu {
             for id in ids {
                 if id == "-" {
                     menu.addItem(.separator())
+                } else if let standard = standardItem(id) {
+                    menu.addItem(standard)
                 } else if let command = CommandTable.command(id: id) {
                     items(for: command).forEach(menu.addItem)
                 }
@@ -96,6 +106,20 @@ enum MainMenu {
         case .left: item.keyEquivalent = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
         case .right: item.keyEquivalent = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
         default: break
+        }
+    }
+
+    /// System text-editing items ("std:…") that text fields such as the search box rely on.
+    private static func standardItem(_ id: String) -> NSMenuItem? {
+        switch id {
+        case "std:undo": return NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        case "std:redo":
+            let item = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+            item.keyEquivalentModifierMask = [.command, .shift]
+            return item
+        case "std:cut": return NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        case "std:paste": return NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        default: return nil
         }
     }
 

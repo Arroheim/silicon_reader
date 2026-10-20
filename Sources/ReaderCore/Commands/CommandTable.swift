@@ -5,6 +5,7 @@
 public struct Command: Hashable, Sendable {
     public enum Group: String, CaseIterable, Sendable {
         case file = "File"
+        case edit = "Edit"
         case view = "View"
         case go = "Go"
         case favorites = "Favorites"
@@ -68,6 +69,16 @@ public enum CommandTable {
         Command("CmdCloseCurrentDocument", "Close Document", .file, action: "closeDocument", [key("q")]),
         Command("CmdPrint", "Print…", .file, action: "printDocument", [key("p", cmd)]),
 
+        // Edit
+        Command("CmdCopySelection", "Copy", .edit, action: "copy", [key("c", cmd)]),
+        Command("CmdSelectAll", "Select All", .edit, action: "selectAll", [key("a", cmd)]),
+        Command("CmdFindFirst", "Find…", .edit, action: "showFind", [key("f", cmd)]),
+        Command("CmdFindNext", "Find Next", .edit, action: "findNext", [key("g", cmd), key(.function(3))]),
+        Command(
+            "CmdFindPrev", "Find Previous", .edit, action: "findPrevious",
+            [key("g", shiftCmd), key(.function(3), .shift)]),
+        Command("CmdFindMatchCase", "Match Case", .edit, action: "toggleMatchCase"),
+
         // View
         Command(
             "CmdToggleBookmarks", "Show Sidebar", .view, action: "toggleSidebar",
@@ -84,6 +95,7 @@ public enum CommandTable {
         Command("CmdZoomIn", "Zoom In", .view, action: "zoomIn", [key("+", cmd), key("=", cmd)]),
         Command("CmdZoomOut", "Zoom Out", .view, action: "zoomOut", [key("-", cmd)]),
         Command("CmdZoomCustom", "Zoom To…", .view, action: "customZoom", [key("y", cmd)]),
+        Command("CmdZoomToSelection", "Zoom to Selection", .view, action: "zoomToSelection", [key("4", cmd)]),
         Command("CmdToggleZoom", "Toggle Zoom", .view, action: "toggleZoom", [key("z")]),
         // Sumatra's Ctrl+Shift+Plus/Minus rely on the numpad: on a Mac keyboard
         // ⇧⌘= is the same chord as ⌘+ (zoom in). Preview's ⌘L / ⌘R instead.

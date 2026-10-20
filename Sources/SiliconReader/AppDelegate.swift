@@ -41,6 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return finishSnapshot(error: "action \(action) was not handled")
                 }
             }
+            // `-find text` searches after the actions; the snapshot waits for the result.
+            if let query = UserDefaults.standard.string(forKey: "find") {
+                guard let canvas = windows.first?.canvas else { return finishSnapshot(error: "-find needs a document") }
+                canvas.find(query, forward: true)
+            }
             snapshotWhenSettled(to: URL(fileURLWithPath: output))
         }
     }

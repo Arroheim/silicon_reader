@@ -110,4 +110,12 @@ struct PageTextTests {
             ])
         #expect(text.rects(for: 2..<3).isEmpty, "the separator alone has no box")
     }
+
+    @Test("ignores whitespace glyphs but still spans the gap between words")
+    func whitespaceGlyphs() {
+        let text = PageText.grid(["a b", "   "])
+
+        #expect(text.rects(for: 0..<3) == [CGRect(x: 0, y: 0, width: 30, height: 10)])
+        #expect(text.rects(for: 4..<7).isEmpty, "a line of spaces gets no highlight")
+    }
 }

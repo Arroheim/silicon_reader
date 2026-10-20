@@ -6,7 +6,6 @@ import ReaderCore
 /// shows their items disabled.
 @objc protocol PendingCommands {
     func printDocument(_ sender: Any?)
-    func showFind(_ sender: Any?)
 }
 
 /// What a window needs from the app: opening files and tracking closed ones.
@@ -42,6 +41,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let view: ViewState
         let sidebarCollapsed: Bool
         let toolbarVisible: Bool
+        let toolbarAutosaves: Bool
         let wasFullScreen: Bool
     }
 
@@ -68,7 +68,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         toolbar.delegate = toolbarController
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = true
-        toolbar.autosavesConfiguration = true
+        // Debug snapshots must not change (or depend on) the user's toolbar setup.
+        toolbar.autosavesConfiguration = restoresFrame
         window.toolbar = toolbar
         showHome()
 
@@ -126,6 +127,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let url = documentURL, url != engine.url { host?.documentDidClose(url) }
         let controller = DocumentViewController(engine: engine, library: library, state: state)
         controller.onStateChange = { [weak self] in self?.toolbarController.update() }
+        controller.canvas.onSearchStatus = { [weak self] status in self?.window?.subtitle = status ?? "" }
         currentDocument = controller
         setContent(controller)
         window?.title = engine.url.lastPathComponent
@@ -215,6 +217,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// ⌘F: the toolbar's search field, or a prompt when the toolbar is hidden.
+    @objc func showFind(_ sender: Any?) {
+        guard let canvas else { return }
+        if window?.toolbar?.isVisible == true, toolbarController.focusSearch() { return }
+        guard let text = prompt("Find", message: "Text to find:") else { return }
+        canvas.find(text, forward: true)
+    }
+
     /// ⌘Y: the toolbar's zoom box, or a prompt when the toolbar is hidden.
     @objc func customZoom(_ sender: Any?) {
         guard let canvas else { return }
@@ -260,14 +270,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             document.canvas.apply(restored)
             document.isSidebarCollapsed = saved.sidebarCollapsed
             window.toolbar?.isVisible = saved.toolbarVisible
+            window.toolbar?.autosavesConfiguration = saved.toolbarAutosaves
             if !saved.wasFullScreen && window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
         } else {
             let canvas = document.canvas
             presentation = PresentationState(
                 view: canvas.viewState, sidebarCollapsed: document.isSidebarCollapsed,
                 toolbarVisible: window.toolbar?.isVisible ?? true,
+                toolbarAutosaves: window.toolbar?.autosavesConfiguration ?? false,
                 wasFullScreen: window.styleMask.contains(.fullScreen))
             document.isSidebarCollapsed = true
+            // Hiding the toolbar for the presentation is not a preference to remember.
+            window.toolbar?.autosavesConfiguration = false
             window.toolbar?.isVisible = false
             canvas.setPresenting(true)
             let single = ViewMode(arrangement: .single, continuous: false)

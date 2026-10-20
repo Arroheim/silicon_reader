@@ -98,10 +98,12 @@ public struct PageText: Sendable, Equatable {
     }
 
     /// Bounding boxes for a scalar range, merged into one rect per visual line.
+    /// Whitespace glyphs are skipped: a lone space can carry a tall, stray box,
+    /// and gaps between words are covered by merging the line anyway.
     public func rects(for range: Range<Int>) -> [CGRect] {
         var result: [CGRect] = []
         var currentLine: Int?
-        for i in range where !rects[i].isNull {
+        for i in range where !rects[i].isNull && !scalars[i].properties.isWhitespace {
             if lines[i] == currentLine, let last = result.popLast() {
                 result.append(last.union(rects[i]))
             } else {
