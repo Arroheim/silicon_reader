@@ -1,0 +1,4 @@
+-std=c11
+-ISources/CMuPDF/include
+-IVendor/mupdf/include
+-IVendor/djvudec

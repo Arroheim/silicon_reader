@@ -21,9 +21,10 @@ public enum DocumentFormat: Equatable, Sendable {
 }
 
 public enum DocumentOpener {
-    public static func open(_ url: URL) throws -> any DocumentEngine {
+    /// Throws `EngineError.passwordRequired` for an encrypted PDF opened without a password.
+    public static func open(_ url: URL, password: String? = nil) throws -> any DocumentEngine {
         switch DocumentFormat.detect(url) {
-        case .pdf: try MuPDFEngine(url: url)
+        case .pdf: try MuPDFEngine(url: url, password: password)
         case .djvu: try DjVuEngine(url: url)
         case nil: throw EngineError.unsupportedFormat(url)
         }
