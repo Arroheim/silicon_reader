@@ -1,0 +1,13 @@
+# SwiftPM / build output
+.build/
+.swiftpm/
+build/
+*.app
+
+# macOS
+.DS_Store
+
+# Local config and secrets
+.env
+.env.*
+!.env.example

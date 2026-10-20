@@ -1,0 +1,4 @@
+[submodule "Vendor/mupdf"]
+	path = Vendor/mupdf
+	url = https://github.com/ArtifexSoftware/mupdf.git
+	shallow = true

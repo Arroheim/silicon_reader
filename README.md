@@ -1,0 +1,67 @@
+# Silicon Reader
+
+A native macOS (Apple Silicon) document reader in the spirit of
+[SumatraPDF](https://github.com/sumatrapdfreader/sumatrapdf): fast, keyboard-driven,
+no clutter. Swift + AppKit on top of the same engines Sumatra uses.
+
+> Status: **phase 0** — project skeleton. Opens PDF and DjVu in a basic
+> continuous-scroll window. The Sumatra-style UI is phase 1.
+
+## 🚀 Quick start
+
+```bash
+git clone --recurse-submodules --shallow-submodules <repo-url> silicon_reader
+cd silicon_reader
+make run FILE=path/to/book.djvu
+```
+
+Only the Xcode **Command Line Tools** are required (`xcode-select --install`);
+full Xcode is not needed.
+
+## 🛠 Make targets
+
+| Target | What it does |
+|---|---|
+| `make deps` | Fetches submodules and builds MuPDF as static libraries into `build/deps/mupdf` (~1 min, once) |
+| `make build` | `swift build` (`CONFIG=release` for an optimized build) |
+| `make test` | Unit tests (swift-testing) |
+| `make lint` / `make format` | `swift format` check / rewrite |
+| `make app` | Release build wrapped into an ad-hoc signed `build/SiliconReader.app` |
+| `make smoke` | Opens sample PDF and DjVu in the app and saves window snapshots to `build/smoke/` |
+| `make run FILE=…` | Builds the app and opens a document |
+
+`SiliconReader -snapshot out.png doc.pdf` renders a document, saves the window to a
+PNG once all visible pages are drawn and exits non-zero on failure. CI uses it
+as an end-to-end smoke check.
+
+## 🧱 Layout
+
+```
+Sources/
+├── CMuPDF/          C facade over MuPDF (fz_try/fz_catch can't cross into Swift)
+├── ReaderCore/      DocumentEngine protocol, MuPDF and DjVu engines — no AppKit
+└── SiliconReader/   AppKit app
+Vendor/
+├── mupdf/           git submodule, pinned to a release tag
+└── djvudec/         vendored single-file DjVu decoder
+Tests/ReaderCoreTests/
+```
+
+## 📦 Dependencies
+
+| Component | Version | License | How |
+|---|---|---|---|
+| [MuPDF](https://mupdf.com) | 1.28.5 | AGPL-3.0 | submodule, static link |
+| [djvudec](https://github.com/kjk/djvudec) | `cfd3251` | MIT | vendored `djvu.c`/`djvu.h` |
+
+Requirements: macOS 14+, Apple Silicon, Swift 6.
+
+## ⚠️ Known toolchain quirk
+
+With the Command Line Tools toolchain, `swift test` intermittently fails with
+`plugin for module 'TestingMacros' not found`. `make test` loads the plugin
+explicitly, so use it instead of bare `swift test`.
+
+## 📄 License
+
+[AGPL-3.0-or-later](LICENSE), as required by MuPDF.

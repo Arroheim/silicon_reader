@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain
+        run: |
+          swift --version
+          xcrun --show-sdk-version
+
+      - name: Lint
+        run: make lint
+
+      - name: Resolve MuPDF revision
+        id: mupdf
+        run: echo "rev=$(git rev-parse HEAD:Vendor/mupdf)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache MuPDF build
+        uses: actions/cache@v4
+        with:
+          path: build/deps/mupdf
+          key: mupdf-${{ runner.os }}-${{ runner.arch }}-${{ steps.mupdf.outputs.rev }}-${{ hashFiles('Makefile') }}
+
+      - name: Build MuPDF
+        run: make deps
+
+      - name: Unit tests
+        run: make test
+
+      - name: Build app and smoke test
+        run: make smoke
+
+      - name: Upload smoke snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-snapshots
+          path: build/smoke/
+          if-no-files-found: ignore
