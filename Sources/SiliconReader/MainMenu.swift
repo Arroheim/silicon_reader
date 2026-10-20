@@ -1,18 +1,102 @@
 import AppKit
+import ReaderCore
 
+/// The menu bar, built from `CommandTable` so menus, the canvas key handler
+/// and keyboard help always agree.
 @MainActor
 enum MainMenu {
+    /// Menu layout by command id; "-" is a separator.
+    private static let layout: [(Command.Group, [String])] = [
+        (
+            .file,
+            [
+                "CmdNewWindow", "CmdDuplicateInNewWindow", "CmdOpenFile", "CmdReopenLastClosedFile", "-",
+                "CmdOpenPrevFileInFolder", "CmdOpenNextFileInFolder", "-", "CmdSaveAs", "CmdReloadDocument", "-",
+                "CmdClose", "CmdCloseCurrentDocument", "-", "CmdPrint",
+            ]
+        ),
+        (
+            .view,
+            [
+                "CmdToggleBookmarks", "CmdToggleToolbar", "-", "CmdSinglePageView", "CmdFacingView", "CmdBookView",
+                "CmdToggleContinuousView", "-", "CmdZoomFitPage", "CmdZoomActualSize", "CmdZoomFitWidth",
+                "CmdZoomFitContent", "CmdZoomIn", "CmdZoomOut", "CmdZoomCustom", "CmdToggleZoom", "-",
+                "CmdRotateLeft", "CmdRotateRight", "-", "CmdInvertColors", "CmdTogglePageInfo",
+                "CmdToggleCursorPosition", "CmdToggleAutomaticallyScroll", "-", "CmdToggleFullscreen",
+                "CmdTogglePresentationMode",
+            ]
+        ),
+        (
+            .go,
+            [
+                "CmdGoToNextPage", "CmdGoToPrevPage", "CmdGoToFirstPage", "CmdGoToLastPage", "CmdGoToPage", "-",
+                "CmdNavigateBack", "CmdNavigateForward",
+            ]
+        ),
+        (.favorites, ["CmdFavoriteAdd"]),
+        (.window, ["CmdPrevTab", "CmdNextTab", "CmdMoveFrameFocus"]),
+        (.help, ["CmdToggleKeyboardHelp"]),
+    ]
+
     static func build() -> NSMenu {
         let main = NSMenu()
         main.addItem(submenu(appMenu()))
-        main.addItem(submenu(fileMenu()))
-        main.addItem(submenu(viewMenu()))
-        main.addItem(submenu(goMenu()))
-        main.addItem(submenu(favoritesMenu()))
-        let window = windowMenu()
-        main.addItem(submenu(window))
-        NSApp.windowsMenu = window
+        for (group, ids) in layout {
+            let menu = NSMenu(title: group.rawValue)
+            if group == .window { addStandardWindowItems(to: menu) }
+            for id in ids {
+                if id == "-" {
+                    menu.addItem(.separator())
+                } else if let command = CommandTable.command(id: id) {
+                    items(for: command).forEach(menu.addItem)
+                }
+            }
+            main.addItem(submenu(menu))
+            if group == .window { NSApp.windowsMenu = menu }
+            if group == .help { NSApp.helpMenu = menu }
+        }
         return main
+    }
+
+    /// A visible item for the command's first ⌘/⌃ shortcut plus hidden items
+    /// for any other ⌘/⌃ alternates (e.g. ⌘= for ⌘+). Single-key shortcuts
+    /// are not menu equivalents; the canvas handles them.
+    private static func items(for command: Command) -> [NSMenuItem] {
+        let action = Selector("\(command.action):")
+        let menuShortcuts = command.shortcuts.filter(\.isMenuShortcut).filter { $0.menuKeyEquivalent != nil }
+        let item = NSMenuItem(title: command.title, action: action, keyEquivalent: "")
+        if let primary = menuShortcuts.first {
+            apply(primary, to: item)
+        } else if let single = command.shortcuts.first {
+            // Show the single-key shortcut as a hint without making it an equivalent.
+            item.toolTip = "Shortcut: \(single.display)"
+        }
+        let alternates = menuShortcuts.dropFirst().map { shortcut -> NSMenuItem in
+            let hidden = NSMenuItem(title: command.title, action: action, keyEquivalent: "")
+            apply(shortcut, to: hidden)
+            hidden.isHidden = true
+            hidden.allowsKeyEquivalentWhenHidden = true
+            return hidden
+        }
+        return [item] + alternates
+    }
+
+    private static func apply(_ shortcut: Shortcut, to item: NSMenuItem) {
+        item.keyEquivalent = shortcut.menuKeyEquivalent ?? ""
+        var mask: NSEvent.ModifierFlags = []
+        if shortcut.modifiers.contains(.command) { mask.insert(.command) }
+        if shortcut.modifiers.contains(.shift) { mask.insert(.shift) }
+        if shortcut.modifiers.contains(.option) { mask.insert(.option) }
+        if shortcut.modifiers.contains(.control) { mask.insert(.control) }
+        item.keyEquivalentModifierMask = mask
+        // Arrow keys aren't characters in the table; map them for menus.
+        switch shortcut.key {
+        case .up: item.keyEquivalent = String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
+        case .down: item.keyEquivalent = String(Character(UnicodeScalar(NSDownArrowFunctionKey)!))
+        case .left: item.keyEquivalent = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        case .right: item.keyEquivalent = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+        default: break
+        }
     }
 
     private static func submenu(_ menu: NSMenu) -> NSMenuItem {
@@ -37,90 +121,9 @@ enum MainMenu {
         return menu
     }
 
-    private static func fileMenu() -> NSMenu {
-        let menu = NSMenu(title: "File")
-        menu.addItem(withTitle: "New Window", action: #selector(AppDelegate.newWindow(_:)), keyEquivalent: "n")
-        menu.addItem(withTitle: "Open…", action: #selector(AppDelegate.openDocument(_:)), keyEquivalent: "o")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Print…", action: #selector(PendingCommands.printDocument(_:)), keyEquivalent: "p")
-        return menu
-    }
-
-    private static func favoritesMenu() -> NSMenu {
-        let menu = NSMenu(title: "Favorites")
-        menu.addItem(
-            withTitle: "Add to Favorites…", action: #selector(DocumentViewController.addFavorite(_:)),
-            keyEquivalent: "d")
-        return menu
-    }
-
-    /// Shortcuts follow SumatraPDF's table (src/shared/Accelerators.cpp) with
-    /// Ctrl mapped to ⌘, plus its macOS-specific overrides (⌘0 actual size, ⌘9 fit page).
-    /// Single-letter shortcuts (c, z, n, p, [, ]) are handled by the canvas so
-    /// they never fire while typing in a text field.
-    private static func viewMenu() -> NSMenu {
-        let menu = NSMenu(title: "View")
-        let sidebar = menu.addItem(
-            withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
-        sidebar.keyEquivalentModifierMask = [.command, .control]
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Single Page", action: #selector(DocumentView.viewSinglePage(_:)), keyEquivalent: "6")
-        menu.addItem(withTitle: "Facing", action: #selector(DocumentView.viewFacing(_:)), keyEquivalent: "7")
-        menu.addItem(withTitle: "Book View", action: #selector(DocumentView.viewBook(_:)), keyEquivalent: "8")
-        menu.addItem(withTitle: "Continuous", action: #selector(DocumentView.toggleContinuous(_:)), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Fit Page", action: #selector(DocumentView.zoomFitPage(_:)), keyEquivalent: "9")
-        menu.addItem(withTitle: "Actual Size", action: #selector(DocumentView.zoomActualSize(_:)), keyEquivalent: "0")
-        menu.addItem(withTitle: "Fit Width", action: #selector(DocumentView.zoomFitWidth(_:)), keyEquivalent: "2")
-        menu.addItem(withTitle: "Fit Content", action: #selector(DocumentView.zoomFitContent(_:)), keyEquivalent: "3")
-        menu.addItem(withTitle: "Zoom In", action: #selector(DocumentView.zoomIn(_:)), keyEquivalent: "+")
-        menu.addItem(hidden("Zoom In", action: #selector(DocumentView.zoomIn(_:)), key: "="))
-        menu.addItem(withTitle: "Zoom Out", action: #selector(DocumentView.zoomOut(_:)), keyEquivalent: "-")
-        menu.addItem(withTitle: "Toggle Zoom", action: #selector(DocumentView.toggleZoom(_:)), keyEquivalent: "")
-        menu.addItem(.separator())
-        let left = menu.addItem(
-            withTitle: "Rotate Left", action: #selector(DocumentView.rotateLeft(_:)), keyEquivalent: "-")
-        left.keyEquivalentModifierMask = [.command, .shift]
-        let right = menu.addItem(
-            withTitle: "Rotate Right", action: #selector(DocumentView.rotateRight(_:)), keyEquivalent: "+")
-        right.keyEquivalentModifierMask = [.command, .shift]
-        let rightAlt = hidden("Rotate Right", action: #selector(DocumentView.rotateRight(_:)), key: "=")
-        rightAlt.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(rightAlt)
-        return menu
-    }
-
-    private static func goMenu() -> NSMenu {
-        let menu = NSMenu(title: "Go")
-        menu.addItem(withTitle: "Next Page", action: #selector(DocumentView.goToNextPage(_:)), keyEquivalent: "")
-        menu.addItem(
-            withTitle: "Previous Page", action: #selector(DocumentView.goToPreviousPage(_:)), keyEquivalent: "")
-        menu.addItem(
-            withTitle: "First Page", action: #selector(DocumentView.goToFirstPage(_:)),
-            keyEquivalent: String(Character(UnicodeScalar(NSUpArrowFunctionKey)!)))
-        menu.addItem(
-            withTitle: "Last Page", action: #selector(DocumentView.goToLastPage(_:)),
-            keyEquivalent: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)))
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Back", action: #selector(DocumentView.navigateBack(_:)), keyEquivalent: "[")
-        menu.addItem(withTitle: "Forward", action: #selector(DocumentView.navigateForward(_:)), keyEquivalent: "]")
-        return menu
-    }
-
-    /// A menu item that only provides an extra key equivalent (e.g. ⌘= for ⌘+).
-    private static func hidden(_ title: String, action: Selector, key: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        item.isHidden = true
-        item.allowsKeyEquivalentWhenHidden = true
-        return item
-    }
-
-    private static func windowMenu() -> NSMenu {
-        let menu = NSMenu(title: "Window")
+    private static func addStandardWindowItems(to menu: NSMenu) {
         menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         menu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
-        return menu
+        menu.addItem(.separator())
     }
 }

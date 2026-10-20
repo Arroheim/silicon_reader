@@ -33,8 +33,20 @@ final class DocumentView: NSView {
     private var drewEverythingWanted = false
     private var history = NavigationHistory()
 
+    /// Session-only, like SumatraPDF's CmdInvertColors.
+    private(set) var invertsColors = false
+    /// Presentation mode: black surroundings, clicks turn pages.
+    private(set) var isPresenting = false
+    /// Presentation "black/white screen" (Sumatra's . and w).
+    private var blankScreen: NSColor?
+    private var autoScrollTask: Task<Void, Never>?
+    /// Points per second; negative scrolls up.
+    private var autoScrollSpeed: CGFloat = 40
+
     /// Called after the current page, zoom or layout mode changes.
     var onStateChange: (() -> Void)?
+    /// Pointer position over a page (page index, point in page space), nil when off the pages.
+    var onPointerMoved: ((Int, CGPoint)?) -> Void = { _ in }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -370,7 +382,13 @@ final class DocumentView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        Self.canvasColor.setFill()
+        if let blankScreen {
+            blankScreen.setFill()
+            dirtyRect.fill()
+            drewEverythingWanted = true
+            return
+        }
+        (isPresenting ? NSColor.black : Self.canvasColor).setFill()
         dirtyRect.fill()
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
@@ -434,6 +452,12 @@ final class DocumentView: NSView {
             for case (let key, let image?) in ready {
                 drawPageImage(image, pageRect: tileRect(key, pageSize: pageSize), geometry: geo, in: ctx)
             }
+            if invertsColors {
+                // white - color: black text on white becomes white on black
+                ctx.setBlendMode(.difference)
+                ctx.setFillColor(NSColor.white.cgColor)
+                ctx.fill(frame)
+            }
             ctx.restoreGState()
         }
 
@@ -465,38 +489,89 @@ final class DocumentView: NSView {
 
     // MARK: - Input
 
+    /// Single keys and Shift combinations come from `CommandTable` and are sent
+    /// down the responder chain; ⌘/⌃ shortcuts are handled by the menu bar.
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection([.command, .option, .control])
-        guard flags.isEmpty else { return super.keyDown(with: event) }
-        let shift = event.modifierFlags.contains(.shift)
-
-        switch event.specialKey {
-        case .downArrow?: return scroll(by: CGPoint(x: 0, y: Self.lineScroll))
-        case .upArrow?: return scroll(by: CGPoint(x: 0, y: -Self.lineScroll))
-        case .leftArrow?: return horizontal(-1)
-        case .rightArrow?: return horizontal(1)
-        case .pageDown?: return pageDown()
-        case .pageUp?: return pageUp()
-        case .home?: return goToPage(0)
-        case .end?: return goToPage(pageCount - 1)
-        case .carriageReturn?, .enter?: return shift ? pageUp() : pageDown()
-        default: break
+        if event.specialKey == nil, event.charactersIgnoringModifiers == "\u{1b}" {
+            return cancelOperation(nil)
         }
-
-        switch event.charactersIgnoringModifiers {
-        case " ": shift ? pageUp() : pageDown()
-        case "j": scroll(by: CGPoint(x: 0, y: Self.lineScroll))
-        case "k": scroll(by: CGPoint(x: 0, y: -Self.lineScroll))
-        case "h": horizontal(-1)
-        case "l": horizontal(1)
-        case "n": goToRow(offset: 1)
-        case "p": goToRow(offset: -1)
-        case "c": setContinuous(!mode.continuous)
-        case "z": setZoom(zoom.toggled)
-        case "[": rotate(by: -90)
-        case "]": rotate(by: 90)
-        default: super.keyDown(with: event)
+        if autoScrollTask != nil, adjustAutoScroll(event) { return }
+        guard let shortcut = Self.shortcut(for: event), !shortcut.isMenuShortcut,
+            let command = CommandTable.command(for: shortcut),
+            NSApp.sendAction(Selector("\(command.action):"), to: nil, from: self)
+        else {
+            return super.keyDown(with: event)
         }
+    }
+
+    static func shortcut(for event: NSEvent) -> Shortcut? {
+        var modifiers: KeyModifiers = []
+        let flags = event.modifierFlags
+        if flags.contains(.command) { modifiers.insert(.command) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.control) { modifiers.insert(.control) }
+
+        let key: Key? =
+            switch event.specialKey {
+            case .upArrow?: .up
+            case .downArrow?: .down
+            case .leftArrow?: .left
+            case .rightArrow?: .right
+            case .pageUp?: .pageUp
+            case .pageDown?: .pageDown
+            case .home?: .home
+            case .end?: .end
+            case .f5?: .function(5)
+            case .f6?: .function(6)
+            case .f11?: .function(11)
+            case .f12?: .function(12)
+            default: nil
+            }
+        if let key { return Shortcut(key, modifiers) }
+        return event.charactersIgnoringModifiers.flatMap { Shortcut.fromEvent(characters: $0, modifiers: modifiers) }
+    }
+
+    /// Esc leaves presentation, auto-scroll or full screen, in that order.
+    override func cancelOperation(_ sender: Any?) {
+        if autoScrollTask != nil {
+            stopAutoScroll()
+        } else if isPresenting {
+            NSApp.sendAction(#selector(MainWindowController.togglePresentation(_:)), to: nil, from: self)
+        } else if window?.styleMask.contains(.fullScreen) == true {
+            window?.toggleFullScreen(nil)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isPresenting else { return super.mouseDown(with: event) }
+        goToRow(offset: 1)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard isPresenting else { return super.rightMouseDown(with: event) }
+        goToRow(offset: -1)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let page = layout.pageFrames.firstIndex(where: { $0?.contains(point) == true }),
+            let geo = geometry(page)
+        else { return onPointerMoved(nil) }
+        onPointerMoved((page, geo.pagePoint(fromCanvas: point)))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onPointerMoved(nil)
     }
 
     /// Left/right scroll when the canvas is wider than the window, otherwise
@@ -507,6 +582,105 @@ final class DocumentView: NSView {
         } else {
             goToRow(offset: Int(direction))
         }
+    }
+
+    // MARK: - Scrolling commands
+
+    // NSResponder's standard actions, so system key bindings reach them too.
+    override func scrollLineDown(_ sender: Any?) { scroll(by: CGPoint(x: 0, y: Self.lineScroll)) }
+    override func scrollLineUp(_ sender: Any?) { scroll(by: CGPoint(x: 0, y: -Self.lineScroll)) }
+    @objc func scrollLineLeft(_ sender: Any?) { horizontal(-1) }
+    @objc func scrollLineRight(_ sender: Any?) { horizontal(1) }
+    @objc func scrollHalfPageDown(_ sender: Any?) { scroll(by: CGPoint(x: 0, y: viewport.height / 2)) }
+    @objc func scrollHalfPageUp(_ sender: Any?) { scroll(by: CGPoint(x: 0, y: -viewport.height / 2)) }
+    @objc func scrollScreenLeft(_ sender: Any?) { scroll(by: CGPoint(x: -viewport.width, y: 0)) }
+    @objc func scrollScreenRight(_ sender: Any?) { scroll(by: CGPoint(x: viewport.width, y: 0)) }
+    @objc func scrollScreenDown(_ sender: Any?) { pageDown() }
+    @objc func scrollScreenUp(_ sender: Any?) { pageUp() }
+
+    // MARK: - Auto scroll
+
+    @objc func toggleAutoScroll(_ sender: Any?) {
+        if autoScrollTask != nil {
+            stopAutoScroll()
+            return
+        }
+        autoScrollTask = Task { [weak self] in
+            let frame: Duration = .milliseconds(16)
+            while !Task.isCancelled, let self {
+                let delta = autoScrollSpeed * 0.016
+                let before = viewport.minY
+                scroll(by: CGPoint(x: 0, y: delta))
+                if viewport.minY == before {
+                    // Reached an end; in non-continuous mode move on to the next row.
+                    if mode.continuous || !flipPageForScroll(deltaY: -delta) { break }
+                }
+                try? await Task.sleep(for: frame)
+            }
+            self?.autoScrollTask = nil
+        }
+    }
+
+    private func stopAutoScroll() {
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+    }
+
+    /// While auto-scrolling, ↑/↓ (and k/j) change the speed instead of scrolling.
+    private func adjustAutoScroll(_ event: NSEvent) -> Bool {
+        let step: CGFloat
+        switch Self.shortcut(for: event) {
+        case Shortcut(.down)?, Shortcut(.character("j"))?: step = 20
+        case Shortcut(.up)?, Shortcut(.character("k"))?: step = -20
+        default: return false
+        }
+        autoScrollSpeed += step
+        return true
+    }
+
+    // MARK: - View effects
+
+    @objc func invertColors(_ sender: Any?) {
+        invertsColors.toggle()
+        needsDisplay = true
+    }
+
+    /// Presentation look: black around a single fitted page, no scrollers.
+    func setPresenting(_ presenting: Bool) {
+        isPresenting = presenting
+        blankScreen = nil
+        if let scroll = enclosingScrollView {
+            scroll.hasVerticalScroller = !presenting
+            scroll.hasHorizontalScroller = !presenting
+            scroll.backgroundColor = presenting ? .black : Self.canvasColor
+        }
+        needsDisplay = true
+    }
+
+    @objc func presentationBlackScreen(_ sender: Any?) { toggleBlank(.black) }
+    @objc func presentationWhiteScreen(_ sender: Any?) { toggleBlank(.white) }
+
+    private func toggleBlank(_ color: NSColor) {
+        guard isPresenting else { return NSSound.beep() }
+        blankScreen = blankScreen == color ? nil : color
+        needsDisplay = true
+    }
+
+    // MARK: - View state
+
+    var viewState: ViewState {
+        ViewState(mode: mode, zoom: zoom, rotation: rotation, position: position)
+    }
+
+    /// Restores mode, zoom, rotation and position (reload, duplicate window).
+    func apply(_ state: ViewState) {
+        mode = state.mode
+        zoom = state.zoom
+        rotation = state.rotation
+        let page = min(max(state.position.page, 0), pageCount - 1)
+        currentPage = mode.continuous ? page : rows.first { $0.pages.contains(page) }?.pages.lowerBound ?? page
+        relayout(keeping: .pageTop(page))
+        show(DocumentPosition(page: page, point: state.position.point))
     }
 
     override func magnify(with event: NSEvent) {
@@ -585,6 +759,8 @@ extension DocumentView: NSMenuItemValidation, NSToolbarItemValidation {
         case #selector(zoomActualSize(_:)): zoom == .actualSize
         case #selector(fitWidthContinuous(_:)): zoom == .fitWidth && mode.continuous
         case #selector(fitPageSingle(_:)): zoom == .fitPage && !mode.continuous && mode.arrangement == .single
+        case #selector(invertColors(_:)): invertsColors
+        case #selector(toggleAutoScroll(_:)): autoScrollTask != nil
         default: nil
         }
     }

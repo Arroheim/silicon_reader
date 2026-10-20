@@ -109,6 +109,10 @@ final class SidebarViewController: NSViewController {
         node.children.forEach(expand)
     }
 
+    func focus() {
+        view.window?.makeFirstResponder(outlineView)
+    }
+
     @objc private func rowClicked(_ sender: Any?) {
         let row = outlineView.clickedRow
         guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarNode, let destination = node.destination

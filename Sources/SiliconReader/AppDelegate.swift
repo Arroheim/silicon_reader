@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Paths passed on the command line (`SiliconReader file.pdf`); AppKit
         // only forwards Finder/`open` requests through application(_:open:).
         for path in Self.documentArguments(CommandLine.arguments.dropFirst()) {
-            open(URL(fileURLWithPath: path))
+            openFile(URL(fileURLWithPath: path))
         }
         if windows.isEmpty && !openedAtLaunch {
             newHomeWindow()
@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         openedAtLaunch = true
-        urls.forEach { open($0) }
+        urls.forEach { openFile($0) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -114,10 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     private func makeWindow() -> MainWindowController {
         let isSnapshot = UserDefaults.standard.string(forKey: "snapshot") != nil
-        let controller = MainWindowController(library: library, thumbnails: thumbnails, restoresFrame: !isSnapshot) {
-            [weak self] url, window in
-            self?.open(url, from: window)
-        }
+        let controller = MainWindowController(
+            library: library, thumbnails: thumbnails, host: self, restoresFrame: !isSnapshot)
         controller.onClose = { [weak self, weak controller] in
             self?.windows.removeAll { $0 === controller }
         }
@@ -140,20 +138,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let djvu = ["djvu", "djv"].compactMap { UTType(filenameExtension: $0) }
         panel.allowedContentTypes = [.pdf] + djvu
         guard panel.runModal() == .OK else { return }
-        panel.urls.forEach { open($0, from: requester) }
+        panel.urls.forEach { openFile($0, from: requester) }
+    }
+
+    /// Recently closed documents, newest last (SumatraPDF's Reopen Last Closed).
+    private var closedDocuments: [URL] = []
+
+    @objc func reopenLastClosed(_ sender: Any?) {
+        let openURLs = Set(windows.compactMap(\.documentURL))
+        while let url = closedDocuments.popLast() {
+            if !openURLs.contains(url) && FileManager.default.fileExists(atPath: url.path) {
+                return openFile(url)
+            }
+        }
+        NSSound.beep()
+    }
+
+    private var keyboardHelp: KeyboardHelpWindowController?
+
+    @objc func showKeyboardHelp(_ sender: Any?) {
+        let help = keyboardHelp ?? KeyboardHelpWindowController()
+        keyboardHelp = help
+        help.showWindow(nil)
     }
 
     /// Opens a document like SumatraPDF: an already open file gets focus, a
     /// home page is replaced in place, otherwise a new tab is added.
-    private func open(_ url: URL, from requester: MainWindowController? = nil) {
-        if let existing = windows.first(where: { $0.currentDocument?.engine.url == url }) {
+    private func openFile(_ url: URL, from requester: MainWindowController? = nil) {
+        if let existing = windows.first(where: { $0.documentURL == url }) {
             existing.window?.makeKeyAndOrderFront(nil)
             return
         }
         guard let engine = openEngine(url) else { return }
-        library.recordOpen(url.path)
-        thumbnails.ensureThumbnail(for: engine)
-        NSDocumentController.shared.noteNewRecentDocumentURL(url)
 
         let anchor = requester ?? keyController ?? windows.last
         if let anchor, anchor.isShowingHome {
@@ -170,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the engine, asking for a password as often as needed.
-    private func openEngine(_ url: URL) -> (any DocumentEngine)? {
+    func openEngine(_ url: URL) -> (any DocumentEngine)? {
         var password: String?
         while true {
             do {
@@ -198,5 +214,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
+    }
+}
+
+extension AppDelegate: MainWindowHost {
+    func open(_ url: URL, from window: MainWindowController) {
+        openFile(url, from: window)
+    }
+
+    /// Duplicate in New Window: a separate window (not a tab) on the same place.
+    func openInNewWindow(_ url: URL, state: ViewState) {
+        guard let engine = openEngine(url) else { return }
+        let controller = makeWindow()
+        controller.window?.tabbingMode = .disallowed
+        controller.show(engine, state: state)
+        controller.window?.tabbingMode = .preferred
+        if let frame = keyController?.window?.frame {
+            controller.window?.setFrameOrigin(NSPoint(x: frame.minX + 24, y: frame.minY - 24))
+        }
+        controller.showWindow(nil)
+    }
+
+    func documentDidClose(_ url: URL) {
+        closedDocuments.removeAll { $0 == url }
+        closedDocuments.append(url)
+    }
+
+    func documentDidOpen(_ engine: any DocumentEngine) {
+        library.recordOpen(engine.url.path)
+        thumbnails.ensureThumbnail(for: engine)
+        NSDocumentController.shared.noteNewRecentDocumentURL(engine.url)
+        closedDocuments.removeAll { $0 == engine.url }
     }
 }

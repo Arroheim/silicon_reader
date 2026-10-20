@@ -1,7 +1,8 @@
 import AppKit
 import ReaderCore
 
-/// One open document: sidebar (bookmarks, favorites) next to the canvas.
+/// One open document: sidebar (bookmarks, favorites) next to the canvas,
+/// plus SumatraPDF's on-canvas info (page info, cursor position).
 @MainActor
 final class DocumentViewController: NSSplitViewController {
     let engine: any DocumentEngine
@@ -9,13 +10,21 @@ final class DocumentViewController: NSSplitViewController {
     private let library: Library
     private let sidebar: SidebarViewController
     private let canvasScroll = CanvasScrollView()
+    private let hud = HUDLabel()
+    /// Restored once the canvas has a size (reload, duplicate window).
+    private var pendingState: ViewState?
+
+    private var showsPageInfo = false
+    private var showsCursorPosition = false
+    private var pointer: (page: Int, point: CGPoint)?
 
     /// Forwarded from the canvas: page, zoom or mode changed.
     var onStateChange: (() -> Void)?
 
-    init(engine: any DocumentEngine, library: Library) {
+    init(engine: any DocumentEngine, library: Library, state: ViewState? = nil) {
         self.engine = engine
         self.library = library
+        self.pendingState = state
         canvas = DocumentView(engine: engine)
         var navigate: (Destination) -> Void = { _ in }
         sidebar = SidebarViewController(engine: engine, library: library, onNavigate: { navigate($0) })
@@ -41,8 +50,24 @@ final class DocumentViewController: NSSplitViewController {
         canvasScroll.drawsBackground = true
         canvasScroll.backgroundColor = DocumentView.canvasColor
         canvasScroll.documentView = canvas
+
+        // The HUD floats over the scroll view, so it stays put while pages scroll.
+        let container = NSView()
+        for view in [canvasScroll, hud] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            canvasScroll.topAnchor.constraint(equalTo: container.topAnchor),
+            canvasScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            canvasScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            canvasScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            hud.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 12),
+            hud.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+        ])
+        hud.isHidden = true
         let canvasController = NSViewController()
-        canvasController.view = canvasScroll
+        canvasController.view = container
 
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
@@ -59,12 +84,23 @@ final class DocumentViewController: NSSplitViewController {
             self, selector: #selector(clipFrameChanged), name: NSView.frameDidChangeNotification, object: clip)
         NotificationCenter.default.addObserver(
             self, selector: #selector(clipBoundsChanged), name: NSView.boundsDidChangeNotification, object: clip)
-        canvas.onStateChange = { [weak self] in self?.onStateChange?() }
+        canvas.onStateChange = { [weak self] in
+            self?.updateHUD()
+            self?.onStateChange?()
+        }
+        canvas.onPointerMoved = { [weak self] pointer in
+            self?.pointer = pointer
+            self?.updateHUD()
+        }
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
         canvas.viewportDidResize()
+        if let state = pendingState {
+            pendingState = nil
+            canvas.apply(state)
+        }
         view.window?.makeFirstResponder(canvas)
     }
 
@@ -74,6 +110,63 @@ final class DocumentViewController: NSSplitViewController {
 
     @objc private func clipBoundsChanged(_ note: Notification) {
         canvas.viewportDidScroll()
+    }
+
+    var isSidebarCollapsed: Bool {
+        get { splitViewItems.first?.isCollapsed ?? true }
+        set { splitViewItems.first?.isCollapsed = newValue }
+    }
+
+    // MARK: - On-canvas info
+
+    @objc func togglePageInfo(_ sender: Any?) {
+        showsPageInfo.toggle()
+        updateHUD()
+    }
+
+    @objc func toggleCursorPosition(_ sender: Any?) {
+        showsCursorPosition.toggle()
+        updateHUD()
+    }
+
+    private func updateHUD() {
+        var lines: [String] = []
+        if showsPageInfo {
+            let page = canvas.currentPage
+            let label = engine.pageLabel(at: page).map { " (\($0))" } ?? ""
+            let size = (try? engine.pageSize(at: page)).map { Self.formatSize($0) } ?? ""
+            lines.append("Page \(page + 1) of \(canvas.pageCount)\(label) · \(size)")
+        }
+        if showsCursorPosition {
+            if let pointer {
+                let x = String(format: "%.1f", pointer.point.x)
+                let y = String(format: "%.1f", pointer.point.y)
+                lines.append("Page \(pointer.page + 1): \(x), \(y) pt")
+            } else {
+                lines.append("Cursor: not over a page")
+            }
+        }
+        hud.stringValue = lines.joined(separator: "\n")
+        hud.isHidden = lines.isEmpty
+    }
+
+    /// "210 × 297 mm" for metric-looking sizes, inches otherwise (Sumatra shows both systems).
+    private static func formatSize(_ size: CGSize) -> String {
+        let mm = { (points: CGFloat) in Int((points / 72 * 25.4).rounded()) }
+        let inches = { (points: CGFloat) in String(format: "%.2f", points / 72) }
+        return "\(mm(size.width)) × \(mm(size.height)) mm (\(inches(size.width)) × \(inches(size.height)) in)"
+    }
+
+    // MARK: - Focus
+
+    /// F6: move keyboard focus between the sidebar and the canvas.
+    @objc func moveFrameFocus(_ sender: Any?) {
+        guard let window = view.window else { return }
+        if window.firstResponder === canvas, !isSidebarCollapsed {
+            sidebar.focus()
+        } else {
+            window.makeFirstResponder(canvas)
+        }
     }
 
     // MARK: - Favorites
@@ -96,8 +189,59 @@ final class DocumentViewController: NSSplitViewController {
         let name = field.stringValue.trimmingCharacters(in: .whitespaces)
         library.addFavorite(Favorite(path: engine.url.path, page: page, name: name.isEmpty ? defaultName : name))
         sidebar.reload()
-        if let item = splitViewItems.first, item.isCollapsed {
-            item.animator().isCollapsed = false
+        if isSidebarCollapsed {
+            splitViewItems.first?.animator().isCollapsed = false
         }
+    }
+}
+
+extension DocumentViewController: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(togglePageInfo(_:)):
+            item.state = showsPageInfo ? .on : .off
+            return true
+        case #selector(toggleCursorPosition(_:)):
+            item.state = showsCursorPosition ? .on : .off
+            return true
+        case #selector(addFavorite(_:)), #selector(moveFrameFocus(_:)):
+            return true
+        default:
+            // e.g. toggleSidebar, which NSSplitViewController validates and retitles
+            return super.validateUserInterfaceItem(item)
+        }
+    }
+}
+
+/// Small rounded label drawn over the canvas.
+final class HUDLabel: NSTextField {
+    init() {
+        super.init(frame: .zero)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = false
+        font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        textColor = .white
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.7).cgColor
+        layer?.cornerRadius = 6
+        alignment = .right
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = super.intrinsicContentSize
+        return NSSize(width: size.width + 16, height: size.height + 8)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Inset the text so it doesn't touch the rounded background.
+        let inset = bounds.insetBy(dx: 8, dy: 4)
+        attributedStringValue.draw(in: inset)
     }
 }

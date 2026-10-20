@@ -163,6 +163,22 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         }
     }
 
+    /// Puts the cursor in the page box; false if it isn't on the toolbar.
+    func focusPageField() -> Bool {
+        focus(pageField)
+    }
+
+    func focusZoomBox() -> Bool {
+        focus(zoomBox)
+    }
+
+    private func focus(_ control: NSControl) -> Bool {
+        guard let window = windowController?.window, control.window === window, control.isEnabled else { return false }
+        window.makeFirstResponder(control)
+        control.currentEditor()?.selectAll(nil)
+        return true
+    }
+
     @objc private func pageEntered(_ sender: NSTextField) {
         guard let canvas = windowController?.canvas else { return }
         let engine = canvas.engine
