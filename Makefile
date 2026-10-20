@@ -55,15 +55,21 @@ SMOKE_DOCS := Tests/ReaderCoreTests/Fixtures/djvu2spec.djvu \
 SMOKE_VIEWS := default= book=viewBook,zoomFitWidth paged=toggleContinuous,goToNextPage,rotateRight \
 	zoomed=zoomActualSize,zoomIn,zoomIn,zoomIn
 
-smoke: app ## Open sample PDF/DjVu in several view modes and save snapshots to build/smoke
-	mkdir -p $(BUILD_DIR)/smoke
+SMOKE_DIR := $(BUILD_DIR)/smoke
+# A throwaway library so smoke runs never touch the user's history.
+SMOKE_LIBRARY := $(SMOKE_DIR)/library.json
+
+smoke: app ## Open sample PDF/DjVu in several view modes, then the home page; snapshots go to build/smoke
+	rm -rf "$(SMOKE_DIR)" && mkdir -p "$(SMOKE_DIR)"
 	for doc in $(SMOKE_DOCS); do \
 		for view in $(SMOKE_VIEWS); do \
-			out="$(BUILD_DIR)/smoke/$$(basename "$$doc" | tr ' ' '_')-$${view%%=*}.png"; \
-			"$(APP)/Contents/MacOS/$(APP_NAME)" -snapshot "$$out" -actions "$${view#*=}" "$$doc"; \
+			out="$(SMOKE_DIR)/$$(basename "$$doc" | tr ' ' '_')-$${view%%=*}.png"; \
+			"$(APP)/Contents/MacOS/$(APP_NAME)" -library "$(SMOKE_LIBRARY)" -snapshot "$$out" -actions "$${view#*=}" "$$doc"; \
 			echo "ok $$out"; \
 		done; \
 	done
+	"$(APP)/Contents/MacOS/$(APP_NAME)" -library "$(SMOKE_LIBRARY)" -snapshot "$(SMOKE_DIR)/home.png"
+	echo "ok $(SMOKE_DIR)/home.png"
 
 run: app ## Build and launch the app (FILE=path/to/doc to open a document)
 	open "$(APP)" $(if $(FILE),--args "$(abspath $(FILE))")

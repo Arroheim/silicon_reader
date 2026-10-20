@@ -33,6 +33,8 @@ full Xcode is not needed.
 `SiliconReader -snapshot out.png [-actions viewFacing,zoomFitWidth] doc.pdf` runs the
 given menu actions, saves the window to a PNG once all visible pages are drawn and
 exits non-zero on failure. CI uses it as an end-to-end smoke check.
+`-library path.json` points the app at a separate history/favorites file, so test
+runs never touch your own (`~/Library/Application Support/SiliconReader/`).
 
 ## 🧱 Layout
 

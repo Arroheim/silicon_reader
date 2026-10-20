@@ -31,6 +31,7 @@ final class DocumentView: NSView {
     private(set) var layout: DocumentLayout
     private var isLiveMagnifying = false
     private var drewEverythingWanted = false
+    private var history = NavigationHistory()
 
     /// Called after the current page, zoom or layout mode changes.
     var onStateChange: (() -> Void)?
@@ -268,6 +269,57 @@ final class DocumentView: NSView {
         return false
     }
 
+    // MARK: - Jumps and history
+
+    /// The document point at the top-left of the viewport.
+    var position: DocumentPosition {
+        let corner = CGPoint(x: viewport.minX, y: viewport.minY)
+        guard let page = nearestPage(to: corner), let geo = geometry(page) else {
+            return DocumentPosition(page: currentPage)
+        }
+        return DocumentPosition(page: page, point: geo.pagePoint(fromCanvas: corner))
+    }
+
+    var canGoBack: Bool { history.canGoBack }
+    var canGoForward: Bool { history.canGoForward }
+
+    /// Follows a link or outline target, remembering where we came from.
+    func go(to destination: Destination) {
+        switch destination {
+        case .uri(let uri):
+            if let url = URL(string: uri) { NSWorkspace.shared.open(url) }
+        case .page(let page, let point):
+            guard (0..<pageCount).contains(page) else { return }
+            history.recordJump(from: position)
+            show(DocumentPosition(page: page, point: point ?? .zero), alignToPageTop: point == nil)
+        }
+    }
+
+    /// A jump to a page (page box, first/last page) that Back can undo.
+    func jump(toPage page: Int) {
+        history.recordJump(from: position)
+        goToPage(page)
+    }
+
+    private func show(_ target: DocumentPosition, alignToPageTop: Bool = false) {
+        if !mode.continuous || alignToPageTop {
+            goToPage(target.page)
+        }
+        guard !alignToPageTop, let geo = geometry(target.page) else { return }
+        let point = geo.canvasPoint(fromPage: target.point)
+        scroll(to: CGPoint(x: canScrollHorizontally ? point.x : viewport.minX, y: point.y))
+        updateCurrentPage()
+        onStateChange?()
+    }
+
+    @objc func navigateBack(_ sender: Any?) {
+        if let target = history.goBack(from: position) { show(target) }
+    }
+
+    @objc func navigateForward(_ sender: Any?) {
+        if let target = history.goForward(from: position) { show(target) }
+    }
+
     // MARK: - Zoom, mode, rotation
 
     func setZoom(_ newZoom: Zoom, at viewportPoint: CGPoint? = nil) {
@@ -494,32 +546,58 @@ final class DocumentView: NSView {
     @objc func rotateRight(_ sender: Any?) { rotate(by: 90) }
     @objc func goToNextPage(_ sender: Any?) { goToRow(offset: 1) }
     @objc func goToPreviousPage(_ sender: Any?) { goToRow(offset: -1) }
-    @objc func goToFirstPage(_ sender: Any?) { goToPage(0) }
-    @objc func goToLastPage(_ sender: Any?) { goToPage(pageCount - 1) }
+    @objc func goToFirstPage(_ sender: Any?) { jump(toPage: 0) }
+    @objc func goToLastPage(_ sender: Any?) { jump(toPage: pageCount - 1) }
+
+    /// SumatraPDF's two layout toolbar buttons.
+    @objc func fitWidthContinuous(_ sender: Any?) {
+        setContinuous(true)
+        setZoom(.fitWidth)
+    }
+
+    @objc func fitPageSingle(_ sender: Any?) {
+        setArrangement(.single)
+        setContinuous(false)
+        setZoom(.fitPage)
+    }
 }
 
-extension DocumentView: NSMenuItemValidation {
+extension DocumentView: NSMenuItemValidation, NSToolbarItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        let checked: Bool? =
-            switch item.action {
-            case #selector(viewSinglePage(_:)): mode.arrangement == .single
-            case #selector(viewFacing(_:)): mode.arrangement == .facing
-            case #selector(viewBook(_:)): mode.arrangement == .book
-            case #selector(toggleContinuous(_:)): mode.continuous
-            case #selector(zoomFitPage(_:)): zoom == .fitPage
-            case #selector(zoomFitWidth(_:)): zoom == .fitWidth
-            case #selector(zoomFitContent(_:)): zoom == .fitContent
-            case #selector(zoomActualSize(_:)): zoom == .actualSize
-            default: nil
-            }
-        if let checked { item.state = checked ? .on : .off }
+        if let checked = isChecked(item.action) { item.state = checked ? .on : .off }
+        return isEnabled(item.action)
+    }
 
-        switch item.action {
-        case #selector(goToNextPage(_:)), #selector(goToLastPage(_:)): return currentPage < pageCount - 1
-        case #selector(goToPreviousPage(_:)), #selector(goToFirstPage(_:)): return currentPage > 0
-        case #selector(zoomIn(_:)): return layout.zoomPercent < Zoom.maxPercent - 0.01
-        case #selector(zoomOut(_:)): return layout.zoomPercent > Zoom.minPercent + 0.01
-        default: return true
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        isEnabled(item.action)
+    }
+
+    /// Check mark for mode/zoom commands; nil for plain commands.
+    func isChecked(_ action: Selector?) -> Bool? {
+        switch action {
+        case #selector(viewSinglePage(_:)): mode.arrangement == .single
+        case #selector(viewFacing(_:)): mode.arrangement == .facing
+        case #selector(viewBook(_:)): mode.arrangement == .book
+        case #selector(toggleContinuous(_:)): mode.continuous
+        case #selector(zoomFitPage(_:)): zoom == .fitPage
+        case #selector(zoomFitWidth(_:)): zoom == .fitWidth
+        case #selector(zoomFitContent(_:)): zoom == .fitContent
+        case #selector(zoomActualSize(_:)): zoom == .actualSize
+        case #selector(fitWidthContinuous(_:)): zoom == .fitWidth && mode.continuous
+        case #selector(fitPageSingle(_:)): zoom == .fitPage && !mode.continuous && mode.arrangement == .single
+        default: nil
+        }
+    }
+
+    func isEnabled(_ action: Selector?) -> Bool {
+        switch action {
+        case #selector(goToNextPage(_:)), #selector(goToLastPage(_:)): currentPage < pageCount - 1
+        case #selector(goToPreviousPage(_:)), #selector(goToFirstPage(_:)): currentPage > 0
+        case #selector(zoomIn(_:)): layout.zoomPercent < Zoom.maxPercent - 0.01
+        case #selector(zoomOut(_:)): layout.zoomPercent > Zoom.minPercent + 0.01
+        case #selector(navigateBack(_:)): canGoBack
+        case #selector(navigateForward(_:)): canGoForward
+        default: true
         }
     }
 }

@@ -6,9 +6,26 @@ usage() {
     cat <<'EOF'
 Usage: scripts/bundle-app.sh <binary> <output.app>
 
-Wraps a built executable into a macOS .app bundle using Resources/Info.plist
-and signs it ad hoc so it launches locally without Gatekeeper prompts.
+Wraps a built executable into a macOS .app bundle using Resources/Info.plist,
+builds AppIcon.icns from Resources/AppIcon.png and signs the bundle ad hoc so
+it launches locally without Gatekeeper prompts.
 EOF
+}
+
+# Renders every size an .icns needs from a 1024x1024 PNG.
+make_icns() {
+    local png="$1"
+    local icns="$2"
+    local iconset
+    iconset="$(mktemp -d)/AppIcon.iconset"
+    mkdir -p "$iconset"
+    local size
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" "$png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+        sips -z "$((size * 2))" "$((size * 2))" "$png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+    done
+    iconutil -c icns "$iconset" -o "$icns"
+    rm -rf "$(dirname "$iconset")"
 }
 
 main() {
@@ -35,6 +52,7 @@ main() {
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp "$binary" "$app/Contents/MacOS/"
     cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
+    make_icns "$root/Resources/AppIcon.png" "$app/Contents/Resources/AppIcon.icns"
     codesign --force --sign - "$app"
     echo "built $app"
 }

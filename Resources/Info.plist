@@ -6,6 +6,8 @@
 	<string>Silicon Reader</string>
 	<key>CFBundleDisplayName</key>
 	<string>Silicon Reader</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>SiliconReader</string>
 	<key>CFBundleIdentifier</key>

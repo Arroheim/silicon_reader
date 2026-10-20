@@ -8,6 +8,7 @@ enum MainMenu {
         main.addItem(submenu(fileMenu()))
         main.addItem(submenu(viewMenu()))
         main.addItem(submenu(goMenu()))
+        main.addItem(submenu(favoritesMenu()))
         let window = windowMenu()
         main.addItem(submenu(window))
         NSApp.windowsMenu = window
@@ -38,9 +39,20 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenu {
         let menu = NSMenu(title: "File")
+        menu.addItem(withTitle: "New Window", action: #selector(AppDelegate.newWindow(_:)), keyEquivalent: "n")
         menu.addItem(withTitle: "Open…", action: #selector(AppDelegate.openDocument(_:)), keyEquivalent: "o")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Print…", action: #selector(PendingCommands.printDocument(_:)), keyEquivalent: "p")
+        return menu
+    }
+
+    private static func favoritesMenu() -> NSMenu {
+        let menu = NSMenu(title: "Favorites")
+        menu.addItem(
+            withTitle: "Add to Favorites…", action: #selector(DocumentViewController.addFavorite(_:)),
+            keyEquivalent: "d")
         return menu
     }
 
@@ -50,6 +62,10 @@ enum MainMenu {
     /// they never fire while typing in a text field.
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
+        let sidebar = menu.addItem(
+            withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
+        sidebar.keyEquivalentModifierMask = [.command, .control]
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Single Page", action: #selector(DocumentView.viewSinglePage(_:)), keyEquivalent: "6")
         menu.addItem(withTitle: "Facing", action: #selector(DocumentView.viewFacing(_:)), keyEquivalent: "7")
         menu.addItem(withTitle: "Book View", action: #selector(DocumentView.viewBook(_:)), keyEquivalent: "8")
@@ -87,6 +103,9 @@ enum MainMenu {
         menu.addItem(
             withTitle: "Last Page", action: #selector(DocumentView.goToLastPage(_:)),
             keyEquivalent: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)))
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Back", action: #selector(DocumentView.navigateBack(_:)), keyEquivalent: "[")
+        menu.addItem(withTitle: "Forward", action: #selector(DocumentView.navigateForward(_:)), keyEquivalent: "]")
         return menu
     }
 
