@@ -62,7 +62,7 @@ final class HomeViewController: NSViewController {
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
 
-        let open = NSButton(title: "Open a document…", target: self, action: #selector(openDocument(_:)))
+        let open = NSButton(title: "Open a document…", target: self, action: #selector(openButtonClicked(_:)))
         open.bezelStyle = .push
         open.keyEquivalent = "\r"
 
@@ -94,6 +94,12 @@ final class HomeViewController: NSViewController {
         reload()
     }
 
+    /// Keyboard focus on the thumbnails: arrows pick a file, Return opens it.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.window?.makeFirstResponder(collectionView)
+    }
+
     func reload() {
         records = library.frequentlyRead(limit: Self.maxItems)
             .filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -101,8 +107,11 @@ final class HomeViewController: NSViewController {
         collectionView.reloadData()
     }
 
-    @objc func openDocument(_ sender: Any?) {
-        NSApp.sendAction(#selector(AppDelegate.openDocument(_:)), to: nil, from: self)
+    /// Deliberately not named `openDocument(_:)`: this view controller sits in
+    /// the responder chain ahead of the app delegate, so a same-named action
+    /// sent to nil came straight back here and recursed until the stack overflowed.
+    @objc private func openButtonClicked(_ sender: Any?) {
+        (NSApp.delegate as? AppDelegate)?.openDocument(sender)
     }
 
     private func contextMenu() -> NSMenu {

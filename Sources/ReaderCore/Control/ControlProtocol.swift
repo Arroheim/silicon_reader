@@ -21,6 +21,9 @@ public struct ControlRequest: Codable, Sendable, Equatable {
         case open
         /// Wait until rendering and search are idle (`timeout` seconds, default 10).
         case wait
+        /// Report which class would handle action `name` starting from the
+        /// window's current focus (`ControlResponse.target`), without sending it.
+        case resolve
         case quit
     }
 
@@ -60,12 +63,17 @@ public struct ControlResponse: Codable, Sendable, Equatable {
     public var error: String?
     /// For `key`/`action`: whether something handled it.
     public var handled: Bool?
+    /// For `resolve`: class name of the responder that would handle the action.
+    public var target: String?
     public var state: ControlState?
 
-    public init(ok: Bool, error: String? = nil, handled: Bool? = nil, state: ControlState? = nil) {
+    public init(
+        ok: Bool, error: String? = nil, handled: Bool? = nil, target: String? = nil, state: ControlState? = nil
+    ) {
         self.ok = ok
         self.error = error
         self.handled = handled
+        self.target = target
         self.state = state
     }
 

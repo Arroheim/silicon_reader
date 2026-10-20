@@ -237,6 +237,45 @@ struct ReaderE2ETests {
         #expect(Set(state.openDocuments) == [Documents.spec.path, Documents.pdf.path])
     }
 
+    /// Regression: the home page's own `openDocument(_:)` re-sent the action
+    /// to the responder chain, found itself again and recursed until the
+    /// stack overflowed (crash on "Open a document…" and the toolbar's Open).
+    @Test("Open… from the home page opens the chosen file instead of crashing", arguments: ["action", "shortcut"])
+    func openFromHome(via: String) throws {
+        let app = try AppSession(extraArguments: ["-openPanelResult", Documents.spec.path])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+
+        if via == "action" {
+            #expect(try app.send(ControlRequest(.action, name: "openDocument")).handled == true)
+        } else {
+            try app.press("o", "cmd")
+        }
+        let state = try app.waitUntilSettled()
+
+        #expect(state.document == Documents.spec.path, "the home page is replaced by the document")
+        #expect(state.openDocuments == [Documents.spec.path])
+    }
+
+    /// Guards the cause of the crash above: an app-level action must reach the
+    /// app delegate from any window's focus. A same-named method anywhere in the
+    /// chain (view controllers, views) shadows it — and if it forwards the
+    /// action to nil, it recurses as soon as its window is key.
+    @Test(
+        "app-level actions reach the app delegate from any window",
+        arguments: ["openDocument", "newWindow", "reopenLastClosed", "showKeyboardHelp"])
+    func appActionsNotShadowed(action: String) throws {
+        let home = try AppSession()
+        defer { try? home.quit() }
+        try home.waitUntilSettled()
+        #expect(try home.send(ControlRequest(.resolve, name: action)).target == "AppDelegate", "from the home page")
+
+        let document = try AppSession(documents: [Documents.spec])
+        defer { try? document.quit() }
+        try document.waitUntilSettled()
+        #expect(try document.send(ControlRequest(.resolve, name: action)).target == "AppDelegate", "from a document")
+    }
+
     @Test("starts on the home page without a session")
     func homePage() throws {
         let app = try AppSession()

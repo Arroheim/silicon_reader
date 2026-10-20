@@ -39,6 +39,11 @@ extension AppDelegate {
                 }
                 try? await Task.sleep(for: .milliseconds(20))
             }
+        case .resolve:
+            guard let name = request.name else { return .failure("resolve needs name") }
+            let start: NSResponder? = front.window?.firstResponder ?? front.window
+            let target = start?.chainTarget(for: Selector("\(name):")).map { String(describing: type(of: $0)) }
+            return ControlResponse(ok: true, target: target ?? "none", state: controlState(front))
         case .quit:
             Task { NSApp.terminate(nil) }
             return ControlResponse(ok: true)

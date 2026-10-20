@@ -39,7 +39,7 @@ final class AppSession {
 
     /// Launches the app on `documents`. `persist` turns on per-file state and
     /// session saving (off by default in control runs).
-    init(documents: [URL] = [], library: URL? = nil, persist: Bool = false) throws {
+    init(documents: [URL] = [], library: URL? = nil, persist: Bool = false, extraArguments: [String] = []) throws {
         self.library = library ?? Self.temporaryDirectory().appendingPathComponent("library.json")
         // sun_path is limited to 104 bytes, so keep the socket path short.
         socketPath = (NSTemporaryDirectory() as NSString)
@@ -48,7 +48,7 @@ final class AppSession {
         process.executableURL = try Self.executable()
         process.arguments =
             ["-control", socketPath, "-library", self.library.path]
-            + (persist ? ["-persist", "YES"] : []) + documents.map(\.path)
+            + (persist ? ["-persist", "YES"] : []) + extraArguments + documents.map(\.path)
         process.standardOutput = FileHandle.nullDevice
         try process.run()
         try connect(within: 15)

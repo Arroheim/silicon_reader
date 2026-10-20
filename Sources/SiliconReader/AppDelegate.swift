@@ -244,6 +244,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openDocument(_ sender: Any?) {
         let requester = keyController
+        // Debug runs: `-openPanelResult path` stands in for the user's pick, so
+        // e2e tests can go through Open… without a modal panel.
+        if isSnapshot, let path = UserDefaults.standard.string(forKey: "openPanelResult") {
+            openFile(URL(fileURLWithPath: path), from: requester)
+            return
+        }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         let djvu = ["djvu", "djv"].compactMap { UTType(filenameExtension: $0) }
