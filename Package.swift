@@ -45,5 +45,10 @@ let package = Package(
             dependencies: ["ReaderCore"],
             resources: [.copy("Fixtures")]
         ),
+        // Drives the built app over its debug control channel; run with `make e2e`.
+        .testTarget(
+            name: "E2ETests",
+            dependencies: ["ReaderCore"]
+        ),
     ]
 )

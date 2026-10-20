@@ -25,6 +25,7 @@ full Xcode is not needed.
 | `make deps` | Fetches submodules and builds MuPDF as static libraries into `build/deps/mupdf` (~1 min, once) |
 | `make build` | `swift build` (`CONFIG=release` for an optimized build) |
 | `make test` | Unit tests (swift-testing) |
+| `make e2e` | Builds the app and drives it end-to-end over its control socket (`Tests/E2ETests`) |
 | `make lint` / `make format` | `swift format` check / rewrite |
 | `make app` | Release build wrapped into an ad-hoc signed `build/SiliconReader.app` |
 | `make smoke` | Opens sample PDF and DjVu in several view modes and saves window snapshots to `build/smoke/` |
@@ -33,6 +34,13 @@ full Xcode is not needed.
 `SiliconReader -snapshot out.png [-actions viewFacing,zoomFitWidth] doc.pdf` runs the
 given menu actions, saves the window to a PNG once all visible pages are drawn and
 exits non-zero on failure. CI uses it as an end-to-end smoke check.
+`SiliconReader -control /tmp/sr.sock doc.pdf` opens a debug control channel: one JSON
+object per line (`{"cmd":"key","chars":"n"}`, `{"cmd":"find","text":"..."}`,
+`{"cmd":"wait"}`, `{"cmd":"state"}` …, see `Sources/ReaderCore/Control/ControlProtocol.swift`).
+The e2e tests use it to press keys through the real menu bar and key handling and
+assert on reported state rather than pixels. Keep the socket path short (macOS limits
+it to 104 bytes).
+
 `-library path.json` points the app at a separate history/favorites file, so test
 runs never touch your own (`~/Library/Application Support/SiliconReader/`).
 Snapshot runs don't write per-file state or the session (each run starts the same);

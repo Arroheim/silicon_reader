@@ -92,6 +92,25 @@ enum MainMenu {
         return [item] + alternates
     }
 
+    /// The menu bar item (hidden alternates included) whose key equivalent is
+    /// `shortcut`, if any; the control channel uses it to "press" menu shortcuts.
+    static func item(for shortcut: Shortcut) -> NSMenuItem? {
+        let expected = NSMenuItem()
+        apply(shortcut, to: expected)
+        func search(_ menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if let found = item.submenu.flatMap(search) { return found }
+                if !item.keyEquivalent.isEmpty, item.keyEquivalent == expected.keyEquivalent,
+                    item.keyEquivalentModifierMask == expected.keyEquivalentModifierMask
+                {
+                    return item
+                }
+            }
+            return nil
+        }
+        return NSApp.mainMenu.flatMap(search)
+    }
+
     private static func apply(_ shortcut: Shortcut, to item: NSMenuItem) {
         item.keyEquivalent = shortcut.menuKeyEquivalent ?? ""
         var mask: NSEvent.ModifierFlags = []
@@ -100,14 +119,6 @@ enum MainMenu {
         if shortcut.modifiers.contains(.option) { mask.insert(.option) }
         if shortcut.modifiers.contains(.control) { mask.insert(.control) }
         item.keyEquivalentModifierMask = mask
-        // Arrow keys aren't characters in the table; map them for menus.
-        switch shortcut.key {
-        case .up: item.keyEquivalent = String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
-        case .down: item.keyEquivalent = String(Character(UnicodeScalar(NSDownArrowFunctionKey)!))
-        case .left: item.keyEquivalent = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
-        case .right: item.keyEquivalent = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
-        default: break
-        }
     }
 
     /// System text-editing items ("std:…") that text fields such as the search box rely on.

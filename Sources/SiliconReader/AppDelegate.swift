@@ -7,10 +7,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windows: [MainWindowController] = []
     private var openedAtLaunch = false
 
-    /// Debug snapshot runs neither write per-file state nor save/restore the
-    /// session, so each run starts from the same place. `-persist YES` turns
-    /// both back on to test them.
-    private let isSnapshot = UserDefaults.standard.string(forKey: "snapshot") != nil
+    /// Debug runs (`-snapshot`, `-control`) neither write per-file state nor
+    /// save/restore the session, so each run starts from the same place.
+    /// `-persist YES` turns both back on to test them.
+    private let isSnapshot = ["snapshot", "control"].contains { UserDefaults.standard.string(forKey: $0) != nil }
+    private var controlServer: ControlServer?
+
+    var thumbnailsIdle: Bool { thumbnails.isIdle }
     private var persists: Bool { !isSnapshot || UserDefaults.standard.bool(forKey: "persist") }
 
     /// `-library path.json` points the app at another library (tests, smoke runs)
@@ -34,6 +37,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             newHomeWindow()
         }
         NSApp.activate()
+
+        // Debug control channel for e2e tests: `-control /path/to/socket`.
+        if let path = UserDefaults.standard.string(forKey: "control") {
+            let server = ControlServer(path: path) { request in await self.handleControl(request) }
+            do {
+                try server.start()
+                controlServer = server
+            } catch {
+                FileHandle.standardError.write(Data("control channel failed: \(error)\n".utf8))
+                exit(2)
+            }
+        }
 
         // Debug hook: `-snapshot out.png` saves the first window once it has
         // finished rendering and quits. `-actions a,b` first sends those menu

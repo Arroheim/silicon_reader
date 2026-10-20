@@ -55,17 +55,27 @@ public struct Shortcut: Hashable, Sendable {
         return Shortcut(key, modifiers)
     }
 
-    /// The character AppKit expects as a menu key equivalent, nil for keys
-    /// that are not menu-friendly.
+    /// The character AppKit expects as a menu key equivalent. Special keys use
+    /// the OpenStep function-key code points (NSUpArrowFunctionKey = U+F700 …),
+    /// which are plain Unicode values, so no AppKit is needed here.
     public var menuKeyEquivalent: String? {
+        func function(_ code: UInt32) -> String { String(Character(Unicode.Scalar(code)!)) }
         switch key {
-        case .character(let c): String(c)
-        case .space: " "
-        case .enter: "\r"
-        case .backspace: "\u{8}"
-        case .escape: "\u{1b}"
-        case .tab: "\t"
-        default: nil
+        case .character(let c): return String(c)
+        case .space: return " "
+        case .enter: return "\r"
+        case .backspace: return "\u{8}"
+        case .escape: return "\u{1b}"
+        case .tab: return "\t"
+        case .up: return function(0xF700)
+        case .down: return function(0xF701)
+        case .left: return function(0xF702)
+        case .right: return function(0xF703)
+        case .home: return function(0xF729)
+        case .end: return function(0xF72B)
+        case .pageUp: return function(0xF72C)
+        case .pageDown: return function(0xF72D)
+        case .function(let n): return (1...35).contains(n) ? function(0xF704 + UInt32(n - 1)) : nil
         }
     }
 

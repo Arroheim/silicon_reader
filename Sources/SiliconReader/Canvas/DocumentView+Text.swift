@@ -250,7 +250,7 @@ extension DocumentView {
 
     private func repeatFind(forward: Bool) {
         guard let query = searchQuery else {
-            NSApp.sendAction(#selector(MainWindowController.showFind(_:)), to: nil, from: self)
+            sendThroughChain(#selector(MainWindowController.showFind(_:)), from: self)
             return
         }
         find(query, forward: forward)

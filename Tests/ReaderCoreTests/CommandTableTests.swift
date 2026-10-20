@@ -44,6 +44,27 @@ struct CommandTableTests {
         #expect(CommandTable.command(for: Shortcut(.character(key))) != nil)
     }
 
+    /// Regression: arrow shortcuts (⌘↓ last page, ⇧⌘→ next file) once had no
+    /// key equivalent and silently vanished from the menu bar.
+    @Test("every ⌘/⌃ shortcut can become a menu key equivalent")
+    func menuShortcutsHaveKeyEquivalents() {
+        for command in CommandTable.all {
+            for shortcut in command.shortcuts where shortcut.isMenuShortcut {
+                #expect(shortcut.menuKeyEquivalent != nil, "\(command.id): \(shortcut.display)")
+            }
+        }
+    }
+
+    @Test(
+        "maps special keys to AppKit's function-key characters",
+        arguments: [
+            (Key.up, 0xF700), (.down, 0xF701), (.left, 0xF702), (.right, 0xF703), (.home, 0xF729), (.end, 0xF72B),
+            (.function(3), 0xF706), (.function(12), 0xF70F),
+        ] as [(Key, UInt32)])
+    func functionKeys(key: Key, code: UInt32) {
+        #expect(Shortcut(key, .command).menuKeyEquivalent?.unicodeScalars.first?.value == code)
+    }
+
     @Test("menu shortcuts are the ones with ⌘ or ⌃")
     func menuShortcuts() {
         #expect(Shortcut(.character("n"), .command).isMenuShortcut)

@@ -30,8 +30,9 @@ final class DocumentView: NSView {
     private(set) var currentPage = 0
     private(set) var layout: DocumentLayout
     private var isLiveMagnifying = false
-    private var drewEverythingWanted = false
     private var history = NavigationHistory()
+    /// Number of draw passes; settling waits for at least one.
+    private var drawCount = 0
 
     /// Session-only, like SumatraPDF's CmdInvertColors.
     private(set) var invertsColors = false
@@ -98,7 +99,22 @@ final class DocumentView: NSView {
     var pageCount: Int { pageSizes.count }
 
     /// True once every visible page is drawn at full resolution and nothing is rendering.
-    var isSettled: Bool { drewEverythingWanted && renderer.isIdle && searchTask == nil }
+    /// True when what is on screen now is final: every tile the current
+    /// viewport needs is rendered, nothing is rendering, searching or waiting
+    /// to be redrawn. Evaluated live rather than remembered from the last
+    /// draw, because AppKit may scroll already-drawn content back into view
+    /// without calling draw again.
+    var isSettled: Bool {
+        drawCount > 0 && !isLiveMagnifying && renderer.isIdle && searchTask == nil && !needsDisplay
+            && missingVisibleTiles.isEmpty
+    }
+
+    /// Why the canvas isn't settled, for control-channel timeouts.
+    var settleDiagnostics: String {
+        let missing = missingVisibleTiles.map { "p\($0.page)@\($0.scaleKey)" }.joined(separator: ",")
+        return "drawCount=\(drawCount) rendererIdle=\(renderer.isIdle) failedTiles=\(renderer.failedCount) "
+            + "missing=[\(missing)] searching=\(searchTask != nil) needsDisplay=\(needsDisplay) viewport=\(viewport)"
+    }
 
     func geometry(_ page: Int) -> PageGeometry? {
         layout.geometry(forPage: page, pageSize: pageSizes[page])
@@ -128,7 +144,10 @@ final class DocumentView: NSView {
 
     /// Re-runs layout for the current state and restores the view position.
     private func relayout(keeping anchor: Anchor) {
-        let saved = capture(anchor)
+        // The very first layout has nothing to anchor to; without an explicit
+        // position the clip view keeps its origin at the bottom of the grown
+        // canvas, which showed (and rendered) the last pages for a moment.
+        let saved = layout.pageFrames.isEmpty ? .pageTop(currentPage) : capture(anchor)
         if zoom == .fitContent {
             measureContent(around: currentPage)
         }
@@ -404,10 +423,10 @@ final class DocumentView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        drawCount += 1
         if let blankScreen {
             blankScreen.setFill()
             dirtyRect.fill()
-            drewEverythingWanted = true
             return
         }
         (isPresenting ? NSColor.black : Self.canvasColor).setFill()
@@ -419,8 +438,7 @@ final class DocumentView: NSView {
         // Prefetch previews one screen above and below.
         let nearby = visible.insetBy(dx: 0, dy: -visible.height)
         var previews: [TileKey] = []
-        var tiles: [(key: TileKey, distance: CGFloat)] = []
-        var missing = false
+        var wanted: [(key: TileKey, distance: CGFloat)] = []
 
         for (page, frame) in layout.pageFrames.enumerated() {
             guard let frame, frame.intersects(nearby), let geo = geometry(page) else { continue }
@@ -429,39 +447,20 @@ final class DocumentView: NSView {
             previews.append(previewKey)
             guard frame.intersects(visible) else { continue }
 
-            let renderScale = geo.scale * deviceScale
-            var pageTiles: [TileKey] = []
-            if engine.supportsRegionRendering {
-                let visiblePart = geo.pageRect(fromCanvas: frame.intersection(visible))
-                    .intersection(CGRect(origin: .zero, size: pageSize))
-                guard !visiblePart.isNull, !visiblePart.isEmpty else { continue }
-                let side = TileKey.size / renderScale
-                func span(_ low: CGFloat, _ high: CGFloat) -> ClosedRange<Int> {
-                    let first = Int(low / side)
-                    return first...max(first, Int((high - 0.001) / side))
-                }
-                for row in span(visiblePart.minY, visiblePart.maxY) {
-                    for column in span(visiblePart.minX, visiblePart.maxX) {
-                        pageTiles.append(TileKey(page: page, scale: renderScale, column: column, row: row))
-                    }
-                }
-            } else {
-                pageTiles.append(TileKey(page: page, scale: renderScale))
-            }
+            let pageTiles = tiles(forPage: page, geometry: geo, visible: visible, deviceScale: deviceScale)
+            guard !pageTiles.isEmpty else { continue }
 
             if !isLiveMagnifying {
                 let center = CGPoint(x: visible.midX, y: visible.midY)
                 for key in pageTiles {
                     let rect = geo.canvasRect(fromPage: tileRect(key, pageSize: pageSize))
-                    tiles.append((key, hypot(rect.midX - center.x, rect.midY - center.y)))
+                    wanted.append((key, hypot(rect.midX - center.x, rect.midY - center.y)))
                 }
             }
 
+            guard frame.intersects(dirtyRect) else { continue }
             let ready = pageTiles.map { ($0, renderer.image(for: $0)) }
             let complete = !ready.contains { $0.1 == nil }
-            missing = missing || !complete
-
-            guard frame.intersects(dirtyRect) else { continue }
             NSColor.white.setFill()
             frame.fill()
             ctx.saveGState()
@@ -484,8 +483,42 @@ final class DocumentView: NSView {
             ctx.restoreGState()
         }
 
-        drewEverythingWanted = !missing && !isLiveMagnifying
-        renderer.request(previews + tiles.sorted { $0.distance < $1.distance }.map(\.key))
+        renderer.request(previews + wanted.sorted { $0.distance < $1.distance }.map(\.key))
+    }
+
+    /// The full-resolution tiles covering the visible part of a page (one
+    /// whole-page "tile" for engines that can't render regions).
+    private func tiles(
+        forPage page: Int, geometry geo: PageGeometry, visible: CGRect, deviceScale: CGFloat
+    ) -> [TileKey] {
+        let renderScale = geo.scale * deviceScale
+        guard engine.supportsRegionRendering else { return [TileKey(page: page, scale: renderScale)] }
+        let pageSize = pageSizes[page]
+        let visiblePart = geo.pageRect(fromCanvas: geo.frame.intersection(visible))
+            .intersection(CGRect(origin: .zero, size: pageSize))
+        guard !visiblePart.isNull, !visiblePart.isEmpty else { return [] }
+        let side = TileKey.size / renderScale
+        func span(_ low: CGFloat, _ high: CGFloat) -> ClosedRange<Int> {
+            let first = Int(low / side)
+            return first...max(first, Int((high - 0.001) / side))
+        }
+        return span(visiblePart.minY, visiblePart.maxY).flatMap { row in
+            span(visiblePart.minX, visiblePart.maxX).map {
+                TileKey(page: page, scale: renderScale, column: $0, row: row)
+            }
+        }
+    }
+
+    /// Tiles the current viewport needs that aren't rendered yet.
+    private var missingVisibleTiles: [TileKey] {
+        let deviceScale = window?.backingScaleFactor ?? 2
+        return layout.pageFrames.indices.flatMap { page -> [TileKey] in
+            guard let frame = layout.pageFrames[page], frame.intersects(viewport), let geo = geometry(page) else {
+                return []
+            }
+            return tiles(forPage: page, geometry: geo, visible: viewport, deviceScale: deviceScale)
+                .filter { !renderer.hasImage(for: $0) }
+        }
     }
 
     private func tileRect(_ key: TileKey, pageSize: CGSize) -> CGRect {
@@ -515,16 +548,22 @@ final class DocumentView: NSView {
     /// Single keys and Shift combinations come from `CommandTable` and are sent
     /// down the responder chain; ⌘/⌃ shortcuts are handled by the menu bar.
     override func keyDown(with event: NSEvent) {
+        if !handleKey(event) {
+            super.keyDown(with: event)
+        }
+    }
+
+    /// Handles a key press; false if no command is bound to it (or it did nothing).
+    func handleKey(_ event: NSEvent) -> Bool {
         if event.specialKey == nil, event.charactersIgnoringModifiers == "\u{1b}" {
-            return cancelOperation(nil)
+            cancelOperation(nil)
+            return true
         }
-        if autoScrollTask != nil, adjustAutoScroll(event) { return }
+        if autoScrollTask != nil, adjustAutoScroll(event) { return true }
         guard let shortcut = Self.shortcut(for: event), !shortcut.isMenuShortcut,
-            let command = CommandTable.command(for: shortcut),
-            NSApp.sendAction(Selector("\(command.action):"), to: nil, from: self)
-        else {
-            return super.keyDown(with: event)
-        }
+            let command = CommandTable.command(for: shortcut)
+        else { return false }
+        return sendThroughChain(Selector("\(command.action):"), from: self)
     }
 
     static func shortcut(for event: NSEvent) -> Shortcut? {
@@ -564,7 +603,7 @@ final class DocumentView: NSView {
         } else if autoScrollTask != nil {
             stopAutoScroll()
         } else if isPresenting {
-            NSApp.sendAction(#selector(MainWindowController.togglePresentation(_:)), to: nil, from: self)
+            sendThroughChain(#selector(MainWindowController.togglePresentation(_:)), from: self)
         } else if window?.styleMask.contains(.fullScreen) == true {
             window?.toggleFullScreen(nil)
         }

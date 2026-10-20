@@ -20,7 +20,7 @@ TEST_FLAGS     := $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-libra
 MUPDF_FLAGS := build=release HAVE_X11=no HAVE_GLUT=no HAVE_CURL=no \
 	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=14.0
 
-.PHONY: help deps build test lint format app smoke run clean distclean
+.PHONY: help deps build test e2e lint format app smoke run clean distclean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -37,7 +37,10 @@ build: deps ## Build the app binary (CONFIG=debug|release)
 	swift build -c $(CONFIG)
 
 test: deps ## Run unit tests
-	swift test $(TEST_FLAGS)
+	swift test $(TEST_FLAGS) --skip E2ETests
+
+e2e: app ## Run end-to-end tests against the built app over its control channel
+	SILICON_READER_APP="$(abspath $(APP))" swift test $(TEST_FLAGS) --filter E2ETests
 
 lint: ## Check formatting with swift-format
 	swift format lint --strict --recursive Package.swift Sources Tests

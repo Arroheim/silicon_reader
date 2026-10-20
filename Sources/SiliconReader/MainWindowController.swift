@@ -182,12 +182,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         flash("Reloaded: the file changed on disk")
     }
 
-    /// Sends a menu action to the first of canvas, document, window controller
-    /// and app delegate that handles it (debug hook), regardless of focus.
+    /// Sends a menu action through this window's responder chain, starting at
+    /// the canvas (or the window when showing home), regardless of focus.
     func perform(_ action: Selector) -> Bool {
-        let targets: [AnyObject?] = [canvas, currentDocument, self, NSApp.delegate]
-        guard let target = targets.compactMap({ $0 }).first(where: { $0.responds(to: action) }) else { return false }
-        return NSApp.sendAction(action, to: target, from: nil)
+        let start: NSResponder? = canvas ?? window?.firstResponder ?? window
+        return start?.sendThroughChain(action) ?? false
     }
 
     /// PNG of the whole window (title bar and toolbar included) as currently drawn.
@@ -342,7 +341,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ]
         for command in CommandTable.all where !paletteCommands.contains(command.id) {
             let action = Selector("\(command.action):")
-            guard let target = availableTarget(for: action) else { continue }
+            guard let target = (window?.firstResponder ?? window)?.chainTarget(for: action) else { continue }
             items.append(
                 PaletteItem(
                     source: .commands, title: command.title, detail: command.shortcuts.first?.display ?? "",
@@ -392,27 +391,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             add(document.engine.outline(), depth: 0)
         }
         return items
-    }
-
-    /// The object that would handle `action` from this window — its responder
-    /// chain, then the window controller, application and delegate — if its menu
-    /// validation agrees. Walked by hand so it works whether or not this window is key.
-    private func availableTarget(for action: Selector) -> AnyObject? {
-        var candidates: [AnyObject] = []
-        var responder: NSResponder? = window?.firstResponder
-        while let current = responder {
-            candidates.append(current)
-            responder = current.nextResponder
-        }
-        candidates += [self, NSApp] + (NSApp.delegate.map { [$0 as AnyObject] } ?? [])
-
-        guard let target = candidates.first(where: { $0.responds(to: action) }) else { return nil }
-        if let validator = target as? NSMenuItemValidation,
-            !validator.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: ""))
-        {
-            return nil
-        }
-        return target
     }
 
     private func openFavorite(_ favorite: Favorite) {

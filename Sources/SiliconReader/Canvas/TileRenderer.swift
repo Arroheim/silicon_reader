@@ -1,4 +1,5 @@
 import CoreGraphics
+import OSLog
 import ReaderCore
 
 /// Identifies a rendered piece of a page.
@@ -64,6 +65,11 @@ final class TileRenderer {
 
     var isIdle: Bool { pending.isEmpty && running.isEmpty }
 
+    /// Whether `key` is cached, without touching its LRU position.
+    func hasImage(for key: TileKey) -> Bool {
+        cache[key] != nil
+    }
+
     func image(for key: TileKey) -> CGImage? {
         guard var entry = cache[key] else { return nil }
         clock += 1
@@ -91,26 +97,35 @@ final class TileRenderer {
             running.insert(key)
             let engine = engine
             Task.detached(priority: .userInitiated) {
-                let image = try? engine.render(page: key.page, scale: key.scale, region: key.region)
-                await self.finish(key, image: image)
+                let result = Result { try engine.render(page: key.page, scale: key.scale, region: key.region) }
+                await self.finish(key, result: result)
             }
         }
     }
 
-    private func finish(_ key: TileKey, image: CGImage?) {
+    var failedCount: Int { failed.count }
+
+    private func finish(_ key: TileKey, result: Result<CGImage, any Error>) {
         running.remove(key)
-        if let image {
+        switch result {
+        case .success(let image):
             clock += 1
             let entry = Entry(image: image, lastUsed: clock)
             cache[key] = entry
             cacheBytes += entry.cost
             evict()
             onTileReady?(key)
-        } else {
+        case .failure(let error):
+            let tile = key.column.map { "\($0),\(key.row ?? 0)" } ?? "whole page"
+            Self.log.error(
+                "render failed: page \(key.page) scale \(key.scale) tile \(tile): \(String(describing: error), privacy: .public)"
+            )
             failed.insert(key)
         }
         pump()
     }
+
+    private static let log = Logger(subsystem: "io.github.arroheim.siliconreader", category: "render")
 
     private func evict() {
         guard cacheBytes > memoryBudget else { return }
