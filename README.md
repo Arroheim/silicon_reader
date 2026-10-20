@@ -35,6 +35,9 @@ given menu actions, saves the window to a PNG once all visible pages are drawn a
 exits non-zero on failure. CI uses it as an end-to-end smoke check.
 `-library path.json` points the app at a separate history/favorites file, so test
 runs never touch your own (`~/Library/Application Support/SiliconReader/`).
+Snapshot runs don't write per-file state or the session (each run starts the same);
+`-persist YES` turns that back on, and `-snapshotAfter 3` delays the capture, e.g. to
+change the open file and watch it reload. `-find text` searches before the capture.
 
 ## 🧱 Layout
 

@@ -11,8 +11,10 @@ final class DocumentViewController: NSSplitViewController {
     private let sidebar: SidebarViewController
     private let canvasScroll = CanvasScrollView()
     private let hud = HUDLabel()
-    /// Restored once the canvas has a size (reload, duplicate window).
+    /// Restored once the canvas has a size (reload, duplicate window, saved state).
     private var pendingState: ViewState?
+    /// Saved sidebar visibility; nil means "show it if there is anything to show".
+    private let sidebarVisible: Bool?
 
     private var showsPageInfo = false
     private var showsCursorPosition = false
@@ -21,10 +23,11 @@ final class DocumentViewController: NSSplitViewController {
     /// Forwarded from the canvas: page, zoom or mode changed.
     var onStateChange: (() -> Void)?
 
-    init(engine: any DocumentEngine, library: Library, state: ViewState? = nil) {
+    init(engine: any DocumentEngine, library: Library, state: ViewState? = nil, sidebarVisible: Bool? = nil) {
         self.engine = engine
         self.library = library
         self.pendingState = state
+        self.sidebarVisible = sidebarVisible
         canvas = DocumentView(engine: engine)
         var navigate: (Destination) -> Void = { _ in }
         sidebar = SidebarViewController(engine: engine, library: library, onNavigate: { navigate($0) })
@@ -73,7 +76,7 @@ final class DocumentViewController: NSSplitViewController {
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 480
         sidebarItem.canCollapse = true
-        sidebarItem.isCollapsed = !sidebar.hasContent
+        sidebarItem.isCollapsed = !(sidebarVisible ?? true) || !sidebar.hasContent
         addSplitViewItem(sidebarItem)
         addSplitViewItem(NSSplitViewItem(viewController: canvasController))
 

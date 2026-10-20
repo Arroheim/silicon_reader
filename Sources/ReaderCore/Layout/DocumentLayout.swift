@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// How pages are arranged in rows.
-public enum PageArrangement: String, Hashable, Sendable, CaseIterable {
+public enum PageArrangement: String, Hashable, Sendable, CaseIterable, Codable {
     /// One page per row.
     case single
     /// Two pages per row: 1-2, 3-4, …
@@ -10,7 +10,7 @@ public enum PageArrangement: String, Hashable, Sendable, CaseIterable {
     case book
 }
 
-public struct ViewMode: Hashable, Sendable {
+public struct ViewMode: Hashable, Sendable, Codable {
     public var arrangement: PageArrangement
     /// Continuous: all rows are laid out and scroll; otherwise only the row
     /// holding the current page is shown.

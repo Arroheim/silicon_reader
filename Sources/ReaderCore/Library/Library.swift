@@ -5,11 +5,63 @@ public struct FileRecord: Codable, Hashable, Sendable {
     public var path: String
     public var openCount: Int
     public var lastOpened: Date
+    /// How the document was last shown (SumatraPDF's per-file FileState).
+    public var state: ViewState?
+    public var sidebarVisible: Bool?
 
-    public init(path: String, openCount: Int = 0, lastOpened: Date = .distantPast) {
+    public init(
+        path: String, openCount: Int = 0, lastOpened: Date = .distantPast, state: ViewState? = nil,
+        sidebarVisible: Bool? = nil
+    ) {
         self.path = path
         self.openCount = openCount
         self.lastOpened = lastOpened
+        self.state = state
+        self.sidebarVisible = sidebarVisible
+    }
+
+    private enum CodingKeys: String, CodingKey { case path, openCount, lastOpened, state, sidebarVisible }
+
+    /// A state written by another version that no longer decodes is dropped,
+    /// keeping the rest of the record (and of the history).
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        openCount = try c.decode(Int.self, forKey: .openCount)
+        lastOpened = try c.decode(Date.self, forKey: .lastOpened)
+        state = try? c.decodeIfPresent(ViewState.self, forKey: .state)
+        sidebarVisible = try? c.decodeIfPresent(Bool.self, forKey: .sidebarVisible)
+    }
+}
+
+/// Windows and tabs open when the app quit (SumatraPDF's RestoreSession).
+public struct Session: Codable, Hashable, Sendable {
+    public struct Window: Codable, Hashable, Sendable {
+        /// Document paths in tab order.
+        public var tabs: [String]
+        public var selectedTab: Int
+
+        public init(tabs: [String], selectedTab: Int = 0) {
+            self.tabs = tabs
+            self.selectedTab = selectedTab
+        }
+    }
+
+    public var windows: [Window]
+
+    public init(windows: [Window]) {
+        self.windows = windows
+    }
+
+    /// Drops documents that no longer exist and windows left without tabs.
+    public func filtered(exists: (String) -> Bool) -> Session {
+        Session(
+            windows: windows.compactMap { window in
+                let selected = window.tabs.indices.contains(window.selectedTab) ? window.tabs[window.selectedTab] : nil
+                let tabs = window.tabs.filter(exists)
+                guard !tabs.isEmpty else { return nil }
+                return Window(tabs: tabs, selectedTab: selected.flatMap { tabs.firstIndex(of: $0) } ?? 0)
+            })
     }
 }
 
@@ -36,6 +88,7 @@ public final class Library: @unchecked Sendable {
     private struct State: Codable {
         var files: [FileRecord] = []
         var favorites: [Favorite] = []
+        var session: Session?
     }
 
     public let url: URL
@@ -93,16 +146,49 @@ public final class Library: @unchecked Sendable {
     }
 
     /// SumatraPDF's "Frequently Read": most opened first, then most recent.
+    /// Records that only hold state (never counted as opened) are left out.
     public func frequentlyRead(limit: Int) -> [FileRecord] {
         Array(
-            files.sorted {
+            files.filter { $0.openCount > 0 }.sorted {
                 ($0.openCount, $0.lastOpened) > ($1.openCount, $1.lastOpened)
             }
             .prefix(limit))
     }
 
     public func recent(limit: Int) -> [FileRecord] {
-        Array(files.sorted { $0.lastOpened > $1.lastOpened }.prefix(limit))
+        Array(files.filter { $0.openCount > 0 }.sorted { $0.lastOpened > $1.lastOpened }.prefix(limit))
+    }
+
+    // MARK: - Per-file state
+
+    public func record(for path: String) -> FileRecord? {
+        lock.withLock { state.files.first { $0.path == path } }
+    }
+
+    /// Remembers how `path` is shown. Does not count as an open; a file not yet
+    /// in the history gets a record with zero opens.
+    public func saveViewState(_ viewState: ViewState, sidebarVisible: Bool, for path: String) {
+        lock.withLock {
+            if let i = state.files.firstIndex(where: { $0.path == path }) {
+                state.files[i].state = viewState
+                state.files[i].sidebarVisible = sidebarVisible
+            } else {
+                state.files.append(FileRecord(path: path, state: viewState, sidebarVisible: sidebarVisible))
+            }
+        }
+        save()
+    }
+
+    // MARK: - Session
+
+    public var session: Session? {
+        lock.withLock { state.session }
+    }
+
+    /// Stores the windows to reopen next launch; nil or no windows clears it.
+    public func saveSession(_ session: Session?) {
+        lock.withLock { state.session = session?.windows.isEmpty == false ? session : nil }
+        save()
     }
 
     // MARK: - Favorites

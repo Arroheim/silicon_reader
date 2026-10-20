@@ -7,6 +7,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windows: [MainWindowController] = []
     private var openedAtLaunch = false
 
+    /// Debug snapshot runs neither write per-file state nor save/restore the
+    /// session, so each run starts from the same place. `-persist YES` turns
+    /// both back on to test them.
+    private let isSnapshot = UserDefaults.standard.string(forKey: "snapshot") != nil
+    private var persists: Bool { !isSnapshot || UserDefaults.standard.bool(forKey: "persist") }
+
     /// `-library path.json` points the app at another library (tests, smoke runs)
     /// so they never touch the user's history.
     private let library = Library(
@@ -24,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for path in Self.documentArguments(CommandLine.arguments.dropFirst()) {
             openFile(URL(fileURLWithPath: path))
         }
-        if windows.isEmpty && !openedAtLaunch {
+        if windows.isEmpty && !openedAtLaunch && !(persists && restoreSession()) {
             newHomeWindow()
         }
         NSApp.activate()
@@ -64,10 +70,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return paths
     }
 
+    /// `-snapshotAfter seconds` waits at least that long first, e.g. to change
+    /// the open file and see the app reload it.
     private func snapshotWhenSettled(to output: URL, timeout: Duration = .seconds(15)) {
+        let minimumWait = Duration.seconds(UserDefaults.standard.double(forKey: "snapshotAfter"))
         Task {
             let clock = ContinuousClock()
-            let deadline = clock.now + timeout
+            let earliest = clock.now + minimumWait
+            let deadline = earliest + timeout
+            try? await Task.sleep(until: earliest)
             while clock.now < deadline {
                 guard let controller = windows.first else {
                     return finishSnapshot(error: "no window")
@@ -105,6 +116,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        guard persists else { return }
+        windows.forEach { $0.saveDocumentState() }
+        library.saveSession(currentSession())
+    }
+
+    // MARK: - Session
+
+    /// Windows in front-to-back order, each with its tabs in tab-bar order.
+    private func currentSession() -> Session {
+        var seen = Set<ObjectIdentifier>()
+        var result: [Session.Window] = []
+        let ordered = NSApp.orderedWindows.compactMap { $0.windowController as? MainWindowController }
+        for controller in ordered + windows {
+            guard let window = controller.window, !seen.contains(ObjectIdentifier(window)) else { continue }
+            let group = window.tabbedWindows ?? [window]
+            group.forEach { seen.insert(ObjectIdentifier($0)) }
+            let controllers = group.compactMap { $0.windowController as? MainWindowController }
+            let tabs = controllers.compactMap { $0.documentURL?.path }
+            guard !tabs.isEmpty else { continue }
+            let selectedPath = (window.tabGroup?.selectedWindow?.windowController as? MainWindowController)?
+                .documentURL?.path
+            let selected = selectedPath.flatMap { tabs.firstIndex(of: $0) } ?? 0
+            result.append(Session.Window(tabs: tabs, selectedTab: selected))
+        }
+        return Session(windows: result)
+    }
+
+    /// Reopens the last session's windows and tabs; false if there was nothing to restore.
+    private func restoreSession() -> Bool {
+        guard let session = library.session?.filtered(exists: { FileManager.default.fileExists(atPath: $0) }),
+            !session.windows.isEmpty
+        else { return false }
+
+        var restoredAny = false
+        for saved in session.windows {
+            var tabs: [MainWindowController] = []
+            for path in saved.tabs {
+                guard let engine = openEngine(URL(fileURLWithPath: path)) else { continue }
+                let controller = makeWindow()
+                controller.show(engine, countsAsOpen: false)
+                if let first = tabs.first?.window, let window = controller.window {
+                    first.addTabbedWindow(window, ordered: .above)
+                }
+                controller.showWindow(nil)
+                tabs.append(controller)
+            }
+            let selected = tabs.indices.contains(saved.selectedTab) ? tabs[saved.selectedTab] : tabs.first
+            selected?.window?.makeKeyAndOrderFront(nil)
+            restoredAny = restoredAny || !tabs.isEmpty
+        }
+        return restoredAny
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { newHomeWindow() }
         return true
@@ -118,9 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     private func makeWindow() -> MainWindowController {
-        let isSnapshot = UserDefaults.standard.string(forKey: "snapshot") != nil
         let controller = MainWindowController(
-            library: library, thumbnails: thumbnails, host: self, restoresFrame: !isSnapshot)
+            library: library, thumbnails: thumbnails, host: self, restoresFrame: !isSnapshot, persistsState: persists)
         controller.onClose = { [weak self, weak controller] in
             self?.windows.removeAll { $0 === controller }
         }
@@ -245,10 +309,12 @@ extension AppDelegate: MainWindowHost {
         closedDocuments.append(url)
     }
 
-    func documentDidOpen(_ engine: any DocumentEngine) {
-        library.recordOpen(engine.url.path)
+    func documentDidOpen(_ engine: any DocumentEngine, countsAsOpen: Bool) {
+        if countsAsOpen {
+            library.recordOpen(engine.url.path)
+            NSDocumentController.shared.noteNewRecentDocumentURL(engine.url)
+        }
         thumbnails.ensureThumbnail(for: engine)
-        NSDocumentController.shared.noteNewRecentDocumentURL(engine.url)
         closedDocuments.removeAll { $0 == engine.url }
     }
 }

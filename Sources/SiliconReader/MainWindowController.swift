@@ -19,8 +19,9 @@ protocol MainWindowHost: AnyObject {
     func openInNewWindow(_ url: URL, state: ViewState)
     /// A document stopped being shown (closed, replaced); for Reopen Last Closed.
     func documentDidClose(_ url: URL)
-    /// A document was shown in a window; records history and thumbnails.
-    func documentDidOpen(_ engine: any DocumentEngine)
+    /// A document was shown in a window. `countsAsOpen` is false for reloads
+    /// and session restore, which shouldn't raise it in "Frequently Read".
+    func documentDidOpen(_ engine: any DocumentEngine, countsAsOpen: Bool)
 }
 
 /// One window (tab) showing either the home page or a document, with
@@ -30,9 +31,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let library: Library
     private let thumbnails: ThumbnailStore
     private weak var host: MainWindowHost?
+    private let persistsState: Bool
     private(set) var currentDocument: DocumentViewController?
     private lazy var toolbarController = ToolbarController(windowController: self)
     private var presentation: PresentationState?
+    /// Reloads the document when its file changes (SumatraPDF's ReloadModifiedDocuments).
+    private var watcher: FileWatcher?
 
     var onClose: (() -> Void)?
 
@@ -45,11 +49,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let wasFullScreen: Bool
     }
 
-    /// `restoresFrame` is off for debug snapshots so their size doesn't depend on the user's last window.
-    init(library: Library, thumbnails: ThumbnailStore, host: MainWindowHost, restoresFrame: Bool = true) {
+    /// Debug snapshots turn off `restoresFrame` so their size doesn't depend on
+    /// the user's last window, and `persistsState` so runs don't leave per-file state behind.
+    init(
+        library: Library, thumbnails: ThumbnailStore, host: MainWindowHost, restoresFrame: Bool = true,
+        persistsState: Bool = true
+    ) {
         self.library = library
         self.thumbnails = thumbnails
         self.host = host
+        self.persistsState = persistsState
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -110,6 +119,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func showHome() {
         if presentation != nil { togglePresentation(nil) }
+        saveDocumentState()
+        stopWatching()
         if let url = documentURL { host?.documentDidClose(url) }
         currentDocument = nil
         let home = HomeViewController(library: library, thumbnails: thumbnails) { [weak self] url in
@@ -123,9 +134,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         toolbarController.update()
     }
 
-    func show(_ engine: any DocumentEngine, state: ViewState? = nil) {
+    /// Shows a document. Without an explicit `state` it comes back the way it
+    /// was last left (SumatraPDF's RememberStatePerDocument).
+    func show(_ engine: any DocumentEngine, state: ViewState? = nil, countsAsOpen: Bool = true) {
+        saveDocumentState()
+        stopWatching()
         if let url = documentURL, url != engine.url { host?.documentDidClose(url) }
-        let controller = DocumentViewController(engine: engine, library: library, state: state)
+
+        let record = library.record(for: engine.url.path)
+        let controller = DocumentViewController(
+            engine: engine, library: library, state: state ?? record?.state,
+            sidebarVisible: record?.sidebarVisible ?? currentDocument.map { !$0.isSidebarCollapsed })
         controller.onStateChange = { [weak self] in self?.toolbarController.update() }
         controller.canvas.onSearchStatus = { [weak self] status in self?.window?.subtitle = status ?? "" }
         currentDocument = controller
@@ -133,7 +152,40 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.title = engine.url.lastPathComponent
         window?.representedURL = engine.url
         toolbarController.update()
-        host?.documentDidOpen(engine)
+        host?.documentDidOpen(engine, countsAsOpen: countsAsOpen)
+        watch(engine.url)
+    }
+
+    /// Remembers page, zoom, layout and sidebar for the shown document.
+    func saveDocumentState() {
+        guard persistsState, let document = currentDocument, let canvas, canvas.layout.pageFrames.count > 0 else {
+            return
+        }
+        library.saveViewState(
+            canvas.viewState, sidebarVisible: !document.isSidebarCollapsed, for: document.engine.url.path)
+    }
+
+    // MARK: - Reload on change
+
+    private func watch(_ url: URL) {
+        watcher = FileWatcher(url: url) { [weak self] in
+            Task { @MainActor in self?.reloadAfterChange(of: url) }
+        }
+    }
+
+    private func stopWatching() {
+        watcher?.stop()
+        watcher = nil
+    }
+
+    /// Reopens the changed file keeping the view. A file caught mid-write
+    /// fails to open silently; the next change event tries again.
+    private func reloadAfterChange(of url: URL) {
+        guard documentURL == url, let state = canvas?.viewState,
+            let engine = try? DocumentOpener.open(url)
+        else { return }
+        show(engine, state: state, countsAsOpen: false)
+        flash("Reloaded: the file changed on disk")
     }
 
     /// Sends a menu action to the first of canvas, document, window controller
@@ -174,7 +226,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let url = documentURL, let state = canvas?.viewState,
             let engine = host?.openEngine(url)
         else { return }
-        show(engine, state: state)
+        show(engine, state: state, countsAsOpen: false)
     }
 
     @objc func closeDocument(_ sender: Any?) {
@@ -304,6 +356,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        saveDocumentState()
+        stopWatching()
         if let url = documentURL { host?.documentDidClose(url) }
         onClose?()
     }
