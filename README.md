@@ -128,6 +128,7 @@ Tests/
 | `make lint` / `make format` | `swift format` check / rewrite |
 | `make app` | Release build wrapped into `build/SiliconReader.app` |
 | `make smoke` | Open sample documents in several view modes and save window snapshots |
+| `make test-swift60` | Unit and e2e tests built with Swift 6.0.3, the toolchain of the macOS 14 CI job (prints how to install it) |
 | `make e2e-prebuilt` / `make smoke-prebuilt` | The same against an existing `build/SiliconReader.app` (CI runs them on macOS 14) |
 | `make check-library DIR=…` | Open every PDF/DjVu under a folder, render sample pages (or all with `ALL_PAGES=1`), report failures |
 | `make dmg` | Pack the app into `build/SiliconReader-<version>.dmg` |
@@ -150,7 +151,7 @@ history), `-persist YES`, `-snapshotAfter N`.
 ## 🚢 Releasing
 
 1. Rename `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) to `## [x.y.z] - YYYY-MM-DD` and commit.
-2. `make release VERSION=x.y.z` — checks the tree and changelog, runs lint, unit and e2e tests, tags `vx.y.z`.
+2. `make release VERSION=x.y.z` — checks the tree and changelog, runs lint, unit and e2e tests (also with Swift 6.0.3, see `make test-swift60`), tags `vx.y.z`.
 3. `git push origin vx.y.z` — the [release workflow](.github/workflows/release.yml) tests again,
    builds the DMG and publishes a GitHub release with it and the changelog section as notes.
 

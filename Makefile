@@ -38,7 +38,7 @@ TEST_FLAGS     := $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-libra
 MUPDF_FLAGS := build=release HAVE_X11=no HAVE_GLUT=no HAVE_CURL=no \
 	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=$(MIN_MACOS)
 
-.PHONY: help deps build test e2e e2e-prebuilt lint format app dmg release smoke smoke-prebuilt check-library run \
+.PHONY: help deps build test test-swift60 e2e e2e-prebuilt lint format app dmg release smoke smoke-prebuilt check-library run \
 	clean distclean
 
 help: ## Show available targets
@@ -65,6 +65,24 @@ e2e: app e2e-prebuilt ## Run end-to-end tests against the built app over its con
 e2e-prebuilt: ## Run end-to-end tests against an existing build/SiliconReader.app
 	SILICON_READER_APP="$(abspath $(APP))" swift test $(SWIFT_FLAGS) $(TEST_FLAGS) --filter E2ETests
 
+# The oldest toolchain the code must build with: the macOS 14 CI job compiles the
+# package and its tests with Xcode 16.2 (Swift 6.0.3, macOS 15.2 SDK), which is
+# stricter about concurrency than current Swift. Install the swift.org toolchain
+# into your home directory (no sudo) to catch that before pushing.
+SWIFT60_TOOLCHAIN ?= $(HOME)/Library/Developer/Toolchains/swift-6.0.3-RELEASE.xctoolchain
+SWIFT60_SDK       ?= $(shell xcrun --sdk macosx15.2 --show-sdk-path 2>/dev/null)
+SWIFT60_PKG_URL   := https://download.swift.org/swift-6.0.3-release/xcode/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE-osx.pkg
+SWIFT60           := SDKROOT="$(SWIFT60_SDK)" "$(SWIFT60_TOOLCHAIN)/usr/bin/swift"
+SWIFT60_FLAGS     := --sdk "$(SWIFT60_SDK)" --scratch-path $(BUILD_DIR)/swift60
+
+test-swift60: app ## Build and run unit + e2e tests with Swift 6.0.3, as the macOS 14 CI job does
+	@[[ -x "$(SWIFT60_TOOLCHAIN)/usr/bin/swift" ]] || { echo "error: no Swift 6.0.3 toolchain. Install it with:"; \
+		echo "  curl -fLO $(SWIFT60_PKG_URL)"; \
+		echo "  installer -pkg swift-6.0.3-RELEASE-osx.pkg -target CurrentUserHomeDirectory"; exit 1; }
+	@[[ -n "$(SWIFT60_SDK)" ]] || { echo "error: no macOS 15.2 SDK (Command Line Tools 16.2 ship it)"; exit 1; }
+	$(SWIFT60) test $(SWIFT60_FLAGS) --skip E2ETests
+	SILICON_READER_APP="$(abspath $(APP))" $(SWIFT60) test $(SWIFT60_FLAGS) --filter E2ETests
+
 lint: ## Check formatting with swift-format
 	swift format lint --strict --recursive Package.swift Sources Tests
 
@@ -85,7 +103,7 @@ release: ## Tag a release: make release VERSION=1.0.0 (checks tree, changelog an
 	@[[ -z "$$(git status --porcelain)" ]] || { echo "error: working tree is not clean"; exit 1; }
 	@! git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null || { echo "error: tag v$(VERSION) exists"; exit 1; }
 	scripts/release-notes.sh "$(VERSION)" >/dev/null
-	$(MAKE) lint test e2e
+	$(MAKE) lint test e2e test-swift60
 	git tag -a "v$(VERSION)" -m "Silicon Reader $(VERSION)"
 	@echo "Tagged v$(VERSION). Publish with: git push origin v$(VERSION)"
 

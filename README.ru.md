@@ -129,6 +129,7 @@ Tests/
 | `make lint` / `make format` | Проверка / переформатирование `swift format` |
 | `make app` | Release-сборка в `build/SiliconReader.app` |
 | `make smoke` | Открывает тестовые документы в нескольких режимах и сохраняет снимки окна |
+| `make test-swift60` | Unit и e2e тесты, собранные Swift 6.0.3 — тулчейном CI-задачи на macOS 14 (подскажет, как его поставить) |
 | `make e2e-prebuilt` / `make smoke-prebuilt` | То же против уже собранного `build/SiliconReader.app` (CI гоняет их на macOS 14) |
 | `make check-library DIR=…` | Открывает каждый PDF/DjVu в папке, рендерит выборочные страницы (или все с `ALL_PAGES=1`), выдаёт отчёт о сбоях |
 | `make dmg` | Упаковывает приложение в `build/SiliconReader-<версия>.dmg` |
@@ -151,7 +152,7 @@ Tests/
 ## 🚢 Релизы
 
 1. Переименуйте `## [Unreleased]` в [CHANGELOG.md](CHANGELOG.md) в `## [x.y.z] - ГГГГ-ММ-ДД` и закоммитьте.
-2. `make release VERSION=x.y.z` — проверит дерево и changelog, прогонит lint, unit и e2e, поставит тег `vx.y.z`.
+2. `make release VERSION=x.y.z` — проверит дерево и changelog, прогонит lint, unit и e2e (в том числе на Swift 6.0.3, см. `make test-swift60`), поставит тег `vx.y.z`.
 3. `git push origin vx.y.z` — [workflow релиза](.github/workflows/release.yml) ещё раз прогонит тесты,
    соберёт DMG и опубликует GitHub Release с ним и разделом changelog в качестве описания.
 
