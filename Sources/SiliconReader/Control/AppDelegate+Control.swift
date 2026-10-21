@@ -82,6 +82,9 @@ extension AppDelegate {
                 return .failure("thumbnail needs a document and page")
             }
             document.thumbnails.activate(page: page)
+        case .toolbar:
+            guard let name = request.name else { return .failure("toolbar needs name") }
+            handled = front.useToolbarItem(name, text: request.text)
         case .quit:
             Task { NSApp.terminate(nil) }
             return ControlResponse(ok: true)

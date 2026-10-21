@@ -68,6 +68,27 @@ struct ReaderE2ETests {
         #expect(try app.press("z").zoom == .fitWidth)
     }
 
+    @Test("the zoom drop-down applies the chosen item, the zoom buttons work while the zoom box has the focus")
+    func toolbarZoom() throws {
+        let app = try AppSession(documents: [Documents.spec])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+        #expect(try app.send(ControlRequest(.action, name: "customZoom")).handled == true, "⌘Y focuses the zoom box")
+
+        let zoomOut = try app.send(ControlRequest(.resolve, name: "zoomOut"))
+        #expect(zoomOut.target == "DocumentView")
+        #expect(zoomOut.handled == true, "enabled although the canvas isn't focused")
+
+        #expect(try app.send(ControlRequest(.toolbar, name: "zoom", text: "200%")).handled == true)
+        #expect(try app.waitUntilSettled().zoom == .percent(200))
+        #expect(try app.send(ControlRequest(.toolbar, name: "zoomOut")).handled == true)
+        #expect(try app.waitUntilSettled().zoomPercent < 200)
+        try app.send(ControlRequest(.toolbar, name: "zoom", text: "200%"))
+        #expect(try app.waitUntilSettled().zoom == .percent(200), "the same item chosen again")
+        try app.send(ControlRequest(.toolbar, name: "zoom", text: "Fit Width"))
+        #expect(try app.waitUntilSettled().zoom == .fitWidth)
+    }
+
     @Test("layout and rotation shortcuts")
     func layout() throws {
         let app = try AppSession(documents: [Documents.spec])
@@ -144,6 +165,22 @@ struct ReaderE2ETests {
 
         #expect(try app.press("g", "cmd", "shift").match == firstMatch, "⇧⌘G goes back")
         #expect(try app.press("f3").match == nextMatch, "F3 is Find Next too")
+    }
+
+    @Test("the arrows next to the search field find the field's text forward and backward")
+    func toolbarFind() throws {
+        let app = try AppSession(documents: [Documents.spec])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+
+        #expect(try app.send(ControlRequest(.toolbar, name: "find", text: "WAVELET")).handled == true)
+        #expect(try app.send(ControlRequest(.toolbar, name: "findNext")).handled == true)
+        let first = try #require(try app.waitUntilSettled().match, "no Return needed")
+        try app.send(ControlRequest(.toolbar, name: "findNext"))
+        let next = try #require(try app.waitUntilSettled().match)
+        #expect((next.page, next.start) > (first.page, first.start))
+        try app.send(ControlRequest(.toolbar, name: "findPrevious"))
+        #expect(try app.waitUntilSettled().match == first, "back to the first match")
     }
 
     @Test("reports when nothing matches")

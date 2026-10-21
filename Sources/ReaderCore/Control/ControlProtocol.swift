@@ -34,6 +34,11 @@ public struct ControlRequest: Codable, Sendable, Equatable {
         case drop
         /// Click the sidebar thumbnail of `page`.
         case thumbnail
+        /// Click the toolbar item `name` (its identifier, e.g. "zoomOut"), with
+        /// the toolbar's own enabled state as `handled`. With `text`, "zoom"
+        /// chooses that entry in the zoom drop-down list and "find" types it into
+        /// the search field without searching.
+        case toolbar
         case quit
     }
 

@@ -19,7 +19,12 @@ extension NSResponder {
         candidates.append(NSApp)
         if let delegate = NSApp.delegate { candidates.append(delegate) }
 
-        guard let target = candidates.first(where: { $0.responds(to: action) }) else { return nil }
+        // Like AppKit, a responder that doesn't handle the action may name another object that does.
+        let found = candidates.lazy.compactMap { candidate -> AnyObject? in
+            if candidate.responds(to: action) { return candidate }
+            return (candidate as? NSResponder)?.supplementalTarget(forAction: action, sender: nil) as AnyObject?
+        }.first
+        guard let target = found else { return nil }
         if validating, let validator = target as? NSMenuItemValidation,
             !validator.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: ""))
         {

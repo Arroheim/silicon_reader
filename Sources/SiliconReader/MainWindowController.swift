@@ -217,6 +217,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return start?.sendThroughChain(action) ?? false
     }
 
+    /// While the page box, zoom box or search field has the focus the canvas
+    /// isn't in the responder chain; without this its toolbar buttons and menu
+    /// items would be disabled until the user clicks the page.
+    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        if let canvas, canvas.responds(to: action) { return canvas }
+        return super.supplementalTarget(forAction: action, sender: sender)
+    }
+
+    /// The control channel's toolbar clicks (`ControlRequest.Command.toolbar`).
+    func useToolbarItem(_ name: String, text: String?) -> Bool {
+        toolbarController.use(NSToolbarItem.Identifier(name), text: text)
+    }
+
     /// PNG of the whole window (title bar and toolbar included) as currently drawn.
     func snapshotPNG() -> Data? {
         guard let view = window?.contentView?.superview ?? window?.contentView,

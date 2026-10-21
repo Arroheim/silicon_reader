@@ -17,12 +17,15 @@ extension NSToolbarItem.Identifier {
     static let zoom = Self("zoom")
     static let zoomIn = Self("zoomIn")
     static let find = Self("find")
+    static let findPrevious = Self("findPrevious")
+    static let findNext = Self("findNext")
 }
 
 /// SumatraPDF's toolbar (src/shared/ToolbarCommon.cpp, gToolbarButtons) in the
-/// same order, minus Read Aloud and Edit PDF. Icons are SF Symbols.
+/// same order, minus Read Aloud and Edit PDF, plus Find Previous/Next arrows
+/// after the search field. Icons are SF Symbols.
 @MainActor
-final class ToolbarController: NSObject, NSToolbarDelegate {
+final class ToolbarController: NSObject, NSToolbarDelegate, NSToolbarItemValidation, NSComboBoxDelegate {
     private weak var windowController: MainWindowController?
     private let pageField = NSTextField()
     private let pageTotal = NSTextField(labelWithString: "")
@@ -39,6 +42,8 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         let label: String
         let symbol: String
         let action: Selector
+        /// Handled by this controller instead of the responder chain.
+        var local = false
     }
 
     private static let buttons: [NSToolbarItem.Identifier: Button] = [
@@ -62,13 +67,17 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         .zoomOut: Button(
             label: "Zoom Out", symbol: "minus.magnifyingglass", action: #selector(DocumentView.zoomOut(_:))),
         .zoomIn: Button(label: "Zoom In", symbol: "plus.magnifyingglass", action: #selector(DocumentView.zoomIn(_:))),
+        .findPrevious: Button(
+            label: "Find Previous", symbol: "chevron.left", action: #selector(findPreviousClicked(_:)), local: true),
+        .findNext: Button(
+            label: "Find Next", symbol: "chevron.right", action: #selector(findNextClicked(_:)), local: true),
     ]
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             .toggleSidebar, .open, .print, .space, .pageNumber, .previousPage, .nextPage, .space, .back, .forward,
             .flexibleSpace, .fitWidthContinuous, .fitPageSingle, .rotateLeft, .rotateRight, .zoomOut, .zoom, .zoomIn,
-            .space, .find,
+            .space, .find, .findPrevious, .findNext,
         ]
     }
 
@@ -87,6 +96,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             item.toolTip = button.label
             item.image = NSImage(systemSymbolName: button.symbol, accessibilityDescription: button.label)
             item.action = button.action
+            if button.local { item.target = self }
             item.isBordered = true
             return item
         }
@@ -134,6 +144,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         zoomBox.addItems(withObjectValues: UserInput.fitNames.map(\.name) + levels)
         zoomBox.numberOfVisibleItems = 16
         zoomBox.completes = false
+        zoomBox.delegate = self
         zoomBox.target = self
         zoomBox.action = #selector(zoomEntered(_:))
         zoomBox.translatesAutoresizingMaskIntoConstraints = false
@@ -164,11 +175,21 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             pageField.stringValue = canvas.engine.pageLabel(at: page) ?? String(page + 1)
         }
         pageTotal.stringValue = "/ \(canvas.pageCount)"
+        let zoomText =
+            UserInput.fitNames.first { $0.zoom == canvas.zoom }?.name
+            ?? UserInput.format(percent: canvas.layout.zoomPercent)
         if zoomBox.currentEditor() == nil {
-            zoomBox.stringValue =
-                UserInput.fitNames.first { $0.zoom == canvas.zoom }?.name
-                ?? UserInput.format(percent: canvas.layout.zoomPercent)
+            zoomBox.stringValue = zoomText
         }
+        // Otherwise choosing the item picked last time wouldn't count as a selection change.
+        let selected = zoomBox.indexOfSelectedItem
+        if selected >= 0, zoomBox.objectValueOfSelectedItem as? String != zoomText {
+            zoomBox.deselectItem(at: selected)
+        }
+    }
+
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        windowController?.canvas != nil
     }
 
     // MARK: - Search field
@@ -193,6 +214,23 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             canvas.clearTextState()
         } else {
             canvas.find(sender.stringValue, forward: !backward)
+        }
+    }
+
+    @objc private func findPreviousClicked(_ sender: Any?) { findFromToolbar(forward: false, sender: sender) }
+    @objc private func findNextClicked(_ sender: Any?) { findFromToolbar(forward: true, sender: sender) }
+
+    /// The arrows search for the field's text, so typing and clicking is
+    /// enough; with an empty field they act like ⇧⌘G / ⌘G.
+    private func findFromToolbar(forward: Bool, sender: Any?) {
+        guard let canvas = windowController?.canvas else { return }
+        let text = searchItem?.searchField.stringValue ?? ""
+        if !text.isEmpty {
+            canvas.find(text, forward: forward)
+        } else if forward {
+            canvas.findNext(sender)
+        } else {
+            canvas.findPrevious(sender)
         }
     }
 
@@ -239,5 +277,41 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         }
         windowController?.window?.makeFirstResponder(canvas)
         update()
+    }
+
+    /// A choice in the drop-down list. The box still shows the old text while
+    /// the selection changes, so the value comes from the chosen item.
+    func comboBoxSelectionDidChange(_ notification: Notification) {
+        guard let canvas = windowController?.canvas, let text = zoomBox.objectValueOfSelectedItem as? String,
+            let zoom = UserInput.zoom(text)
+        else { return }
+        canvas.setZoom(zoom)
+    }
+
+    // MARK: - Control channel
+
+    /// Clicks the toolbar item `identifier` (see `ControlRequest.Command.toolbar`);
+    /// false if it isn't on the toolbar or is disabled.
+    func use(_ identifier: NSToolbarItem.Identifier, text: String?) -> Bool {
+        guard let window = windowController?.window, let toolbar = window.toolbar,
+            let item = toolbar.items.first(where: { $0.itemIdentifier == identifier })
+        else { return false }
+        switch identifier {
+        case .zoom:
+            guard let text, zoomBox.isEnabled else { return false }
+            let index = zoomBox.indexOfItem(withObjectValue: text)
+            guard index != NSNotFound else { return false }
+            zoomBox.selectItem(at: index)
+            return true
+        case .find:
+            guard let text, let field = searchItem?.searchField else { return false }
+            field.stringValue = text
+            return true
+        default:
+            toolbar.validateVisibleItems()
+            guard item.isEnabled, let action = item.action else { return false }
+            if let target = item.target { return NSApp.sendAction(action, to: target, from: item) }
+            return (window.firstResponder ?? window).sendThroughChain(action, from: item)
+        }
     }
 }
