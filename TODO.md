@@ -68,6 +68,8 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] GitHub repo: https://github.com/Arroheim/silicon_reader (public; first CI run green)
 - [x] CHANGELOG.md has its `[1.0.0]` section
 - [x] Released 1.0.0: https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.0
+- [x] Released 1.0.1 (Liquid Glass layout fix, tested on macOS 14 before publishing):
+      https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.1
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
