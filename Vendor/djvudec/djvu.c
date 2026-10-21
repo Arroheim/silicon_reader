@@ -6364,7 +6364,7 @@ static void page_index_scan(djvu_doc *doc, djvu_page_int *pg)
     if (djvu_form_find_chunk(doc, pg->form_off, "Djbz", &sz, NULL))
         pg->chunk_flags |= DJVU_PG_DJBZ;
     while ((incl = djvu_form_find_chunk(doc, pg->form_off, "INCL", &sz, &start)) != NULL) {
-        char id[64];
+        char id[1024]; /* silicon-reader patch 0001: was 64, truncated long INCL ids */
         size_t n = sz < sizeof(id) - 1 ? sz : sizeof(id) - 1;
         memcpy(id, incl, n);
         id[n] = 0;
@@ -6948,7 +6948,7 @@ static jb2_image *jb2_dict_for_form_unlocked(djvu_doc *doc, uint32_t form_off)
     if (djbz)
         return jb2_inline_find_or_decode(doc, djbz, chunk_sz);
     while ((incl = djvu_form_find_chunk(doc, form_off, "INCL", &incl_sz, &start)) != NULL) {
-        char id[64];
+        char id[1024]; /* silicon-reader patch 0001: was 64, truncated long INCL ids */
         size_t n = incl_sz < sizeof(id) - 1 ? incl_sz : sizeof(id) - 1;
         memcpy(id, incl, n);
         id[n] = 0;
@@ -6997,7 +6997,7 @@ const uint8_t *djvu_form_find_incl_chunk(djvu_doc *doc, uint32_t form_off,
     const uint8_t *incl;
 
     while ((incl = djvu_form_find_chunk(doc, form_off, "INCL", &incl_sz, &start)) != NULL) {
-        char id[64];
+        char id[1024]; /* silicon-reader patch 0001: was 64, truncated long INCL ids */
         uint32_t coff;
         const uint8_t *chunk;
         size_t n = incl_sz < sizeof(id) - 1 ? incl_sz : sizeof(id) - 1;
