@@ -107,9 +107,10 @@ struct ReaderE2ETests {
         #expect(try !app.waitUntilSettled().canvasUnderToolbar)
         #expect(try !app.press("s", "ctrl", "cmd").canvasUnderToolbar, "sidebar toggled")
         #expect(try app.press("f", "cmd", "shift").presenting)
-        let back = try app.press("escape")
-        #expect(!back.presenting)
-        #expect(!back.canvasUnderToolbar, "after leaving presentation")
+        try app.waitUntilSettled()
+        #expect(try !app.press("escape").presenting)
+        // Leaving full screen animates: check the layout it ends with.
+        #expect(try !app.waitUntilSettled().canvasUnderToolbar, "after leaving presentation")
     }
 
     @Test("unbound keys are reported as not handled")

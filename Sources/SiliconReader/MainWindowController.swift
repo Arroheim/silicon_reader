@@ -112,7 +112,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var documentURL: URL? { currentDocument?.engine.url }
 
     /// True once whatever is shown has finished rendering (debug snapshot hook).
-    var isSettled: Bool { (canvas?.isSettled ?? true) && (currentDocument?.thumbnails.isIdle ?? true) }
+    var isSettled: Bool {
+        !isChangingFullScreen && (canvas?.isSettled ?? true) && (currentDocument?.thumbnails.isIdle ?? true)
+    }
+
+    /// Entering or leaving full screen animates; the layout is final only after it.
+    private var isChangingFullScreen = false
 
     func showHome() {
         if presentation != nil { togglePresentation(nil) }
@@ -481,7 +486,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         onClose?()
     }
 
+    func windowWillEnterFullScreen(_ notification: Notification) { isChangingFullScreen = true }
+    func windowDidEnterFullScreen(_ notification: Notification) { isChangingFullScreen = false }
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) { isChangingFullScreen = false }
+    func windowWillExitFullScreen(_ notification: Notification) { isChangingFullScreen = true }
+    func windowDidFailToExitFullScreen(_ window: NSWindow) { isChangingFullScreen = false }
+
     func windowDidExitFullScreen(_ notification: Notification) {
+        isChangingFullScreen = false
         // Leaving full screen by other means (green button, ⌃⌘F) ends presentation too.
         if presentation != nil { togglePresentation(nil) }
     }
