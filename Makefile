@@ -11,6 +11,19 @@ MUPDF_OUT   := $(BUILD_DIR)/deps/mupdf
 MUPDF_STAMP := $(MUPDF_OUT)/.built
 JOBS        := $(shell sysctl -n hw.ncpu)
 
+# The oldest macOS the app runs on. The SDK below only decides which AppKit
+# behavior the app opts into on newer systems; this is what keeps macOS 14 working.
+MIN_MACOS := 14.0
+
+# SwiftPM with the Command Line Tools links through clang with --sysroot only (and
+# does not pass SDKROOT on), so clang cannot read the SDK version and records the
+# deployment target instead (sdk 14.0). Xcode builds (CI, releases) record the real
+# SDK. Hand the linker driver -isysroot so local builds link the same way and look
+# the same as the published app; scripts/check-binary.sh guards it.
+SDK_PATH    := $(shell xcrun --sdk macosx --show-sdk-path)
+SDK_VERSION := $(shell xcrun --sdk macosx --show-sdk-version)
+SWIFT_FLAGS := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH)
+
 # Version from the latest v* tag (v1.0.0 → 1.0.0) unless given; build number = commit count.
 VERSION      ?= $(or $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//'),0.1.0)
 BUILD_NUMBER ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
@@ -23,7 +36,7 @@ TESTING_PLUGIN := $(shell dirname "$$(dirname "$$(xcrun --find swift)")")/lib/sw
 TEST_FLAGS     := $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-library -Xswiftc $(TESTING_PLUGIN))
 
 MUPDF_FLAGS := build=release HAVE_X11=no HAVE_GLUT=no HAVE_CURL=no \
-	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=14.0
+	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=$(MIN_MACOS)
 
 .PHONY: help deps build test e2e lint format app dmg release smoke check-library run clean distclean
 
@@ -39,13 +52,13 @@ $(MUPDF_STAMP):
 	touch "$@"
 
 build: deps ## Build the app binary (CONFIG=debug|release)
-	swift build -c $(CONFIG)
+	swift build -c $(CONFIG) $(SWIFT_FLAGS)
 
 test: deps ## Run unit tests
-	swift test $(TEST_FLAGS) --skip E2ETests
+	swift test $(SWIFT_FLAGS) $(TEST_FLAGS) --skip E2ETests
 
 e2e: app ## Run end-to-end tests against the built app over its control channel
-	SILICON_READER_APP="$(abspath $(APP))" swift test $(TEST_FLAGS) --filter E2ETests
+	SILICON_READER_APP="$(abspath $(APP))" swift test $(SWIFT_FLAGS) $(TEST_FLAGS) --filter E2ETests
 
 lint: ## Check formatting with swift-format
 	swift format lint --strict --recursive Package.swift Sources Tests
@@ -57,6 +70,7 @@ app: ## Assemble an ad-hoc signed .app bundle (release build, VERSION=x.y.z)
 	$(MAKE) build CONFIG=release
 	scripts/bundle-app.sh "$$(swift build -c release --show-bin-path)/$(APP_NAME)" "$(APP)" \
 		"$(VERSION)" "$(BUILD_NUMBER)"
+	scripts/check-binary.sh "$(APP)/Contents/MacOS/$(APP_NAME)" "$(MIN_MACOS)" "$(SDK_VERSION)"
 
 dmg: app ## Pack the app into build/SiliconReader-$(VERSION).dmg (+ .sha256)
 	scripts/make-dmg.sh "$(APP)" "$(DMG)"
@@ -97,7 +111,7 @@ CHECK_TIMEOUT ?= 180
 
 check-library: deps ## Check every PDF/DjVu under DIR (ALL_PAGES=1 renders every page); report in build/check
 	@test -n "$(DIR)" || { echo "usage: make check-library DIR=/path/to/books [ALL_PAGES=1]"; exit 64; }
-	swift build -c release --product ReaderCheck
+	swift build -c release --product ReaderCheck $(SWIFT_FLAGS)
 	"$$(swift build -c release --show-bin-path)/ReaderCheck" --batch "$(DIR)" --jobs $(CHECK_JOBS) \
 		--timeout $(CHECK_TIMEOUT) --report $(BUILD_DIR)/check/report.jsonl $(if $(ALL_PAGES),--all-pages)
 

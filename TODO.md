@@ -68,6 +68,14 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] GitHub repo: https://github.com/Arroheim/silicon_reader (public; first CI run green)
 - [x] CHANGELOG.md has its `[1.0.0]` section
 - [x] Released 1.0.0: https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.0
+- [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
+      showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
+      libraries with `scripts/check-binary.sh`
+- [ ] Liquid Glass (SDK 26+ on macOS 26+): toolbar capsules float over the canvas and
+      cover the title — try `UIDesignRequiresCompatibility` on macOS 27, otherwise lay
+      the canvas and sidebar out below the toolbar (1.0.1)
+- [ ] Run the built app on macOS 14 in CI (smoke + e2e on a `macos-14` runner): today
+      macOS 14 support is checked statically only
 
 ### Library check
 
