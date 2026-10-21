@@ -99,6 +99,19 @@ struct ReaderE2ETests {
         #expect(back.mode == ViewMode(arrangement: .single, continuous: true), "previous layout is restored")
     }
 
+    @Test("the canvas stays below the toolbar, with and without the sidebar and after presentation")
+    func canvasBelowToolbar() throws {
+        let app = try AppSession(documents: [Documents.spec])
+        defer { try? app.quit() }
+
+        #expect(try !app.waitUntilSettled().canvasUnderToolbar)
+        #expect(try !app.press("s", "ctrl", "cmd").canvasUnderToolbar, "sidebar toggled")
+        #expect(try app.press("f", "cmd", "shift").presenting)
+        let back = try app.press("escape")
+        #expect(!back.presenting)
+        #expect(!back.canvasUnderToolbar, "after leaving presentation")
+    }
+
     @Test("unbound keys are reported as not handled")
     func unboundKey() throws {
         let app = try AppSession(documents: [Documents.spec])

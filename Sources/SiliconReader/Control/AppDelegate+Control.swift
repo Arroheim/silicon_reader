@@ -217,6 +217,7 @@ extension AppDelegate {
             thumbnailPage: controller.currentDocument?.thumbnails.selectedPage,
             panels: panels,
             presenting: canvas?.isPresenting ?? false,
+            canvasUnderToolbar: controller.currentDocument?.canvasUnderToolbar ?? false,
             invertsColors: canvas?.invertsColors ?? false,
             subtitle: controller.window?.subtitle ?? "",
             openDocuments: documents,

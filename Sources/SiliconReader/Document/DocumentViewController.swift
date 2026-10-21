@@ -55,13 +55,16 @@ final class DocumentViewController: NSSplitViewController {
         canvasScroll.documentView = canvas
 
         // The HUD floats over the scroll view, so it stays put while pages scroll.
+        // The canvas starts below the toolbar: with Liquid Glass (macOS 26+ SDK) a
+        // full-size content view would draw pages over the title and under the
+        // floating toolbar buttons.
         let container = NSView()
         for view in [canvasScroll, hud] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            canvasScroll.topAnchor.constraint(equalTo: container.topAnchor),
+            canvasScroll.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
             canvasScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             canvasScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             canvasScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -125,6 +128,14 @@ final class DocumentViewController: NSSplitViewController {
 
     var sidebarMode: SidebarViewController.Mode { sidebar.mode }
     var thumbnails: PageThumbnailsController { sidebar.thumbnails }
+
+    /// Whether the canvas reaches above the window's content layout rect, i.e.
+    /// into the title bar or toolbar.
+    var canvasUnderToolbar: Bool {
+        guard let window = view.window else { return false }
+        let frame = canvasScroll.convert(canvasScroll.bounds, to: nil)
+        return frame.maxY > window.contentLayoutRect.maxY + 0.5
+    }
 
     // MARK: - Sidebar modes
 
