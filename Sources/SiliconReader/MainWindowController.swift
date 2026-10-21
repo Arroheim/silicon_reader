@@ -54,7 +54,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.host = host
         self.persistsState = persistsState
         let window = ReaderWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 1000),
+            contentRect: NSRect(origin: .zero, size: Self.defaultSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
@@ -91,7 +91,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private static let minimumSize = NSSize(width: 640, height: 480)
-    private static let defaultSize = NSSize(width: 1000, height: 1000)
+    /// Wide enough for the whole toolbar, search field included, next to the sidebar.
+    private static let defaultSize = NSSize(width: 1100, height: 1000)
 
     /// Swaps the content without letting the new view controller resize the window.
     private func setContent(_ controller: NSViewController) {

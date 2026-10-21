@@ -8,10 +8,11 @@ import ReaderCore
 /// canvas and scrolling is done by the clip view.
 @MainActor
 final class DocumentView: NSView {
-    /// Theme background around pages (SumatraPDF Light: #f2f2f2, Dark: #000000).
+    /// Background around pages: SumatraPDF Light's #f2f2f2; in dark mode the
+    /// system's under-page gray (#282828) rather than Sumatra Dark's pure black.
     static let canvasColor = NSColor(name: "canvas") { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
+            ? NSColor(srgbRed: 0x28 / 255.0, green: 0x28 / 255.0, blue: 0x28 / 255.0, alpha: 1)
             : NSColor(srgbRed: 0xf2 / 255.0, green: 0xf2 / 255.0, blue: 0xf2 / 255.0, alpha: 1)
     }
 
