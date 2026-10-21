@@ -22,7 +22,9 @@ public struct ControlRequest: Codable, Sendable, Equatable {
         /// Wait until rendering and search are idle (`timeout` seconds, default 10).
         case wait
         /// Report which class would handle action `name` starting from the
-        /// window's current focus (`ControlResponse.target`), without sending it.
+        /// window's current focus (`ControlResponse.target`; `handled` = enabled),
+        /// without sending it. With `chars`/`modifiers` instead of `name`, report
+        /// the action of the menu item bound to that shortcut.
         case resolve
         case quit
     }
@@ -114,12 +116,17 @@ public struct ControlState: Codable, Sendable, Equatable {
     public var subtitle: String
     /// Document paths of all tabs and windows, front window's tabs first.
     public var openDocuments: [String]
+    /// Document paths of the front window's tabs in tab-bar order (empty strings for home tabs).
+    public var frontTabs: [String]
+    /// Number of separate windows (a window with tabs counts once).
+    public var windowCount: Int
     public var settled: Bool
 
     public init(
         document: String?, pageCount: Int, page: Int, zoom: Zoom?, zoomPercent: Double, mode: ViewMode?,
         rotation: Int, selectedText: String, searchQuery: String?, match: Match?, sidebarVisible: Bool,
-        presenting: Bool, invertsColors: Bool, subtitle: String, openDocuments: [String], settled: Bool
+        presenting: Bool, invertsColors: Bool, subtitle: String, openDocuments: [String], frontTabs: [String] = [],
+        windowCount: Int = 1, settled: Bool
     ) {
         self.document = document
         self.pageCount = pageCount
@@ -136,6 +143,8 @@ public struct ControlState: Codable, Sendable, Equatable {
         self.invertsColors = invertsColors
         self.subtitle = subtitle
         self.openDocuments = openDocuments
+        self.frontTabs = frontTabs
+        self.windowCount = windowCount
         self.settled = settled
     }
 }

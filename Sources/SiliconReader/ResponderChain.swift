@@ -9,7 +9,7 @@ extension NSResponder {
     /// window is key, so commands reach the window they came from even when
     /// the app isn't active (e.g. driven by the e2e control channel).
     @MainActor
-    func chainTarget(for action: Selector) -> AnyObject? {
+    func chainTarget(for action: Selector, validating: Bool = true) -> AnyObject? {
         var candidates: [AnyObject] = []
         var responder: NSResponder? = self
         while let current = responder {
@@ -20,7 +20,7 @@ extension NSResponder {
         if let delegate = NSApp.delegate { candidates.append(delegate) }
 
         guard let target = candidates.first(where: { $0.responds(to: action) }) else { return nil }
-        if let validator = target as? NSMenuItemValidation,
+        if validating, let validator = target as? NSMenuItemValidation,
             !validator.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: ""))
         {
             return nil

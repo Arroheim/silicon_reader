@@ -40,10 +40,23 @@ extension AppDelegate {
                 try? await Task.sleep(for: .milliseconds(20))
             }
         case .resolve:
-            guard let name = request.name else { return .failure("resolve needs name") }
+            if let chars = request.chars {
+                let modifiers = Self.keyModifiers(request.modifiers ?? [])
+                guard let modifiers, let shortcut = Self.shortcut(chars, modifiers) else {
+                    return .failure("cannot parse shortcut")
+                }
+                let action = MainMenu.item(for: shortcut)?.action.map(NSStringFromSelector)
+                return ControlResponse(ok: true, handled: action != nil, target: action ?? "none")
+            }
+            guard let name = request.name else { return .failure("resolve needs name or chars") }
             let start: NSResponder? = front.window?.firstResponder ?? front.window
-            let target = start?.chainTarget(for: Selector("\(name):")).map { String(describing: type(of: $0)) }
-            return ControlResponse(ok: true, target: target ?? "none", state: controlState(front))
+            let action = Selector("\(name):")
+            // `handled` here means "enabled": the responder exists and its validation allows the action.
+            let responder = start?.chainTarget(for: action, validating: false)
+            let enabled = start?.chainTarget(for: action) != nil
+            return ControlResponse(
+                ok: true, handled: enabled, target: responder.map { String(describing: type(of: $0)) } ?? "none",
+                state: controlState(front))
         case .quit:
             Task { NSApp.terminate(nil) }
             return ControlResponse(ok: true)
@@ -51,12 +64,14 @@ extension AppDelegate {
         return ControlResponse(ok: true, handled: handled, state: controlState(frontController ?? front))
     }
 
-    /// The window a user would be looking at: key, else the last visible one opened.
+    /// The window a user would be looking at: the key window, else the selected
+    /// tab of the frontmost window (tests drive an app that is never active).
     private var frontController: MainWindowController? {
         let all = NSApp.windows.compactMap { $0.windowController as? MainWindowController }
-        return all.first { $0.window?.isKeyWindow == true }
-            ?? NSApp.orderedWindows.lazy.compactMap { $0.windowController as? MainWindowController }.first
-            ?? all.last
+        if let key = all.first(where: { $0.window?.isKeyWindow == true }) { return key }
+        let front = NSApp.orderedWindows.first { $0.windowController is MainWindowController && $0.isVisible }
+        let selected = front?.tabGroup?.selectedWindow ?? front
+        return selected?.windowController as? MainWindowController ?? all.last
     }
 
     private func isSettled(_ controller: MainWindowController?) -> Bool {
@@ -67,21 +82,9 @@ extension AppDelegate {
     /// exist in the menu bar (and run that item's action), other keys go to
     /// the canvas key handler.
     private func pressKey(_ chars: String, modifiers names: [String], in controller: MainWindowController) -> Bool {
-        var modifiers: KeyModifiers = []
-        for name in names {
-            switch name {
-            case "cmd": modifiers.insert(.command)
-            case "shift": modifiers.insert(.shift)
-            case "option": modifiers.insert(.option)
-            case "ctrl": modifiers.insert(.control)
-            default: return false
-            }
-        }
-        guard let (characters, key) = Self.keyCharacters(chars) else { return false }
-        let named = key.map { Shortcut($0, modifiers) }
-        guard let shortcut = named ?? Shortcut.fromEvent(characters: characters, modifiers: modifiers) else {
-            return false
-        }
+        guard let modifiers = Self.keyModifiers(names), let shortcut = Self.shortcut(chars, modifiers),
+            let (characters, _) = Self.keyCharacters(chars)
+        else { return false }
 
         if shortcut.isMenuShortcut {
             guard let item = MainMenu.item(for: shortcut), let action = item.action else { return false }
@@ -98,6 +101,28 @@ extension AppDelegate {
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: 0)
         else { return false }
         return canvas.handleKey(event)
+    }
+
+    /// "cmd", "shift", "option", "ctrl"; nil for anything else.
+    private static func keyModifiers(_ names: [String]) -> KeyModifiers? {
+        var modifiers: KeyModifiers = []
+        for name in names {
+            switch name {
+            case "cmd": modifiers.insert(.command)
+            case "shift": modifiers.insert(.shift)
+            case "option": modifiers.insert(.option)
+            case "ctrl": modifiers.insert(.control)
+            default: return nil
+            }
+        }
+        return modifiers
+    }
+
+    /// The normalized shortcut for a key name or character plus modifiers.
+    private static func shortcut(_ chars: String, _ modifiers: KeyModifiers) -> Shortcut? {
+        guard let (characters, key) = keyCharacters(chars) else { return nil }
+        if let key { return Shortcut(key, modifiers) }
+        return Shortcut.fromEvent(characters: characters, modifiers: modifiers)
     }
 
     /// Named keys ("down", "home", "f3", "space", "return", "escape", "backspace")
@@ -128,6 +153,11 @@ extension AppDelegate {
     private func controlState(_ controller: MainWindowController) -> ControlState {
         let canvas = controller.canvas
         let documents = NSApp.windows.compactMap { ($0.windowController as? MainWindowController)?.documentURL?.path }
+        let tabWindows = controller.window.map { $0.tabbedWindows ?? [$0] } ?? []
+        let frontTabs = tabWindows.map { ($0.windowController as? MainWindowController)?.documentURL?.path ?? "" }
+        let visible = NSApp.windows.filter { $0.windowController is MainWindowController && $0.isVisible }
+        // Tabs of one window share a tab group; count each group once.
+        let windowCount = Set(visible.map { ObjectIdentifier(($0.tabGroup as AnyObject?) ?? $0) }).count
         return ControlState(
             document: controller.documentURL?.path,
             pageCount: canvas?.pageCount ?? 0,
@@ -146,6 +176,8 @@ extension AppDelegate {
             invertsColors: canvas?.invertsColors ?? false,
             subtitle: controller.window?.subtitle ?? "",
             openDocuments: documents,
+            frontTabs: frontTabs,
+            windowCount: windowCount,
             settled: isSettled(controller))
     }
 }
