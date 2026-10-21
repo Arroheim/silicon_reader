@@ -88,8 +88,10 @@ final class DocumentViewController: NSSplitViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(clipBoundsChanged), name: NSView.boundsDidChangeNotification, object: clip)
         canvas.onStateChange = { [weak self] in
-            self?.updateHUD()
-            self?.onStateChange?()
+            guard let self else { return }
+            updateHUD()
+            sidebar.currentPageChanged(canvas.currentPage)
+            onStateChange?()
         }
         canvas.onPointerMoved = { [weak self] pointer in
             self?.pointer = pointer
@@ -104,6 +106,7 @@ final class DocumentViewController: NSSplitViewController {
             pendingState = nil
             canvas.apply(state)
         }
+        sidebar.currentPageChanged(canvas.currentPage)
         view.window?.makeFirstResponder(canvas)
     }
 
@@ -118,6 +121,23 @@ final class DocumentViewController: NSSplitViewController {
     var isSidebarCollapsed: Bool {
         get { splitViewItems.first?.isCollapsed ?? true }
         set { splitViewItems.first?.isCollapsed = newValue }
+    }
+
+    var sidebarMode: SidebarViewController.Mode { sidebar.mode }
+    var thumbnails: PageThumbnailsController { sidebar.thumbnails }
+
+    // MARK: - Sidebar modes
+
+    /// ⌥⌘2: opens the sidebar on page thumbnails.
+    @objc func showThumbnails(_ sender: Any?) { showSidebar(.thumbnails) }
+
+    /// ⌥⌘3: opens the sidebar on bookmarks and favorites.
+    @objc func showBookmarks(_ sender: Any?) { showSidebar(.bookmarks) }
+
+    private func showSidebar(_ mode: SidebarViewController.Mode) {
+        sidebar.show(mode)
+        isSidebarCollapsed = false
+        sidebar.currentPageChanged(canvas.currentPage)
     }
 
     // MARK: - On-canvas info
@@ -208,6 +228,11 @@ extension DocumentViewController: NSMenuItemValidation {
             item.state = showsCursorPosition ? .on : .off
             return true
         case #selector(addFavorite(_:)), #selector(moveFrameFocus(_:)):
+            return true
+        case #selector(showThumbnails(_:)), #selector(showBookmarks(_:)):
+            let thumbnails = item.action == #selector(showThumbnails(_:))
+            let mode: SidebarViewController.Mode = thumbnails ? .thumbnails : .bookmarks
+            item.state = !isSidebarCollapsed && sidebar.mode == mode ? .on : .off
             return true
         default:
             // e.g. toggleSidebar, which NSSplitViewController validates and retitles

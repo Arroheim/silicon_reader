@@ -4,6 +4,8 @@
 /// future command palette speak the same language as Sumatra's docs.
 public struct Command: Hashable, Sendable {
     public enum Group: String, CaseIterable, Sendable {
+        /// The application menu (About, Settings).
+        case app = "Silicon Reader"
         case file = "File"
         case edit = "Edit"
         case view = "View"
@@ -49,6 +51,10 @@ public enum CommandTable {
     private static let ctrlCmd: KeyModifiers = [.control, .command]
 
     public static let all: [Command] = [
+        // Application menu; Sumatra has these under Help and Settings.
+        Command("CmdAbout", "About Silicon Reader", .app, action: "showAbout"),
+        Command("CmdOptions", "Settings…", .app, action: "showSettings", [key(",", cmd)]),
+
         // File
         Command("CmdNewWindow", "New Window", .file, action: "newWindow", [key("n", cmd)]),
         Command(
@@ -85,6 +91,10 @@ public enum CommandTable {
         Command(
             "CmdToggleBookmarks", "Show Sidebar", .view, action: "toggleSidebar",
             [key("s", ctrlCmd), key(.function(12))]),
+        // Not in Sumatra, which has no page thumbnails; Preview's shortcuts.
+        Command(
+            "CmdShowThumbnails", "Page Thumbnails", .view, action: "showThumbnails", [key("2", optCmd)]),
+        Command("CmdShowBookmarks", "Bookmarks", .view, action: "showBookmarks", [key("3", optCmd)]),
         Command("CmdToggleToolbar", "Show Toolbar", .view, action: "toggleToolbarShown", [key("t", optCmd)]),
         Command("CmdSinglePageView", "Single Page", .view, action: "viewSinglePage", [key("6", cmd)]),
         Command("CmdFacingView", "Facing", .view, action: "viewFacing", [key("7", cmd)]),

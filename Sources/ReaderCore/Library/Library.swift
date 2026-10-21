@@ -89,6 +89,8 @@ public final class Library: @unchecked Sendable {
         var files: [FileRecord] = []
         var favorites: [Favorite] = []
         var session: Session?
+        /// Optional so libraries written before settings existed still decode.
+        var settings: Settings?
     }
 
     public let url: URL
@@ -157,6 +159,25 @@ public final class Library: @unchecked Sendable {
 
     public func recent(limit: Int) -> [FileRecord] {
         Array(files.filter { $0.openCount > 0 }.sorted { $0.lastOpened > $1.lastOpened }.prefix(limit))
+    }
+
+    /// Open Recent's "Clear Menu": files leave the recent and frequently read
+    /// lists, but keep their remembered view state and favorites.
+    public func clearRecent() {
+        lock.withLock {
+            for i in state.files.indices { state.files[i].openCount = 0 }
+        }
+        save()
+    }
+
+    // MARK: - Settings
+
+    public var settings: Settings {
+        get { lock.withLock { state.settings ?? Settings() } }
+        set {
+            lock.withLock { state.settings = newValue }
+            save()
+        }
     }
 
     // MARK: - Per-file state

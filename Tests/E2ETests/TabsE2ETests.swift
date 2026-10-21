@@ -62,7 +62,8 @@ extension ReaderE2ETests {
         #expect(menu.target == action, "menu item for ⌘\(key)")
 
         let name = String(action.dropLast())
-        #expect(try app.send(ControlRequest(.resolve, name: name)).target == "NSWindow")
+        // ReaderWindow inherits the tab actions from NSWindow.
+        #expect(try app.send(ControlRequest(.resolve, name: name)).target == "ReaderWindow")
     }
 
     @Test("closing tabs keeps the rest; Reopen Last Closed brings one back")

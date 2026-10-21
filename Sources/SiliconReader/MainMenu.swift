@@ -10,7 +10,8 @@ enum MainMenu {
         (
             .file,
             [
-                "CmdNewWindow", "CmdDuplicateInNewWindow", "CmdOpenFile", "CmdReopenLastClosedFile", "-",
+                "CmdNewWindow", "CmdDuplicateInNewWindow", "CmdOpenFile", "menu:recent", "CmdReopenLastClosedFile",
+                "-",
                 "CmdOpenPrevFileInFolder", "CmdOpenNextFileInFolder", "-", "CmdSaveAs", "CmdReloadDocument", "-",
                 "CmdClose", "CmdCloseCurrentDocument", "-", "CmdProperties", "CmdPrint",
             ]
@@ -25,7 +26,8 @@ enum MainMenu {
         (
             .view,
             [
-                "CmdToggleBookmarks", "CmdToggleToolbar", "-", "CmdSinglePageView", "CmdFacingView", "CmdBookView",
+                "CmdToggleBookmarks", "CmdShowThumbnails", "CmdShowBookmarks", "CmdToggleToolbar", "-",
+                "CmdSinglePageView", "CmdFacingView", "CmdBookView",
                 "CmdToggleContinuousView", "-", "CmdZoomFitPage", "CmdZoomActualSize", "CmdZoomFitWidth",
                 "CmdZoomFitContent", "CmdZoomIn", "CmdZoomOut", "CmdZoomCustom", "CmdZoomToSelection",
                 "CmdToggleZoom", "-",
@@ -47,7 +49,10 @@ enum MainMenu {
         (.help, ["CmdToggleKeyboardHelp"]),
     ]
 
-    static func build() -> NSMenu {
+    /// Title of File ▸ Open Recent; the control channel finds the submenu by it.
+    static let recentTitle = "Open Recent"
+
+    static func build(recentMenuDelegate: any NSMenuDelegate) -> NSMenu {
         let main = NSMenu()
         main.addItem(submenu(appMenu()))
         for (group, ids) in layout {
@@ -56,6 +61,13 @@ enum MainMenu {
             for id in ids {
                 if id == "-" {
                     menu.addItem(.separator())
+                } else if id == "menu:recent" {
+                    // Filled from the history each time it opens.
+                    let recent = NSMenu(title: recentTitle)
+                    recent.delegate = recentMenuDelegate
+                    let item = NSMenuItem(title: recentTitle, action: nil, keyEquivalent: "")
+                    item.submenu = recent
+                    menu.addItem(item)
                 } else if let standard = standardItem(id) {
                     menu.addItem(standard)
                 } else if let command = CommandTable.command(id: id) {
@@ -144,9 +156,10 @@ enum MainMenu {
     private static func appMenu() -> NSMenu {
         let name = ProcessInfo.processInfo.processName
         let menu = NSMenu(title: name)
-        menu.addItem(
-            withTitle: "About \(name)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-            keyEquivalent: "")
+        for (index, command) in CommandTable.commands(in: .app).enumerated() {
+            if index > 0 { menu.addItem(.separator()) }
+            items(for: command).forEach(menu.addItem)
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Hide \(name)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = menu.addItem(

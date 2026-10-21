@@ -57,6 +57,31 @@ extension AppDelegate {
             return ControlResponse(
                 ok: true, handled: enabled, target: responder.map { String(describing: type(of: $0)) } ?? "none",
                 state: controlState(front))
+        case .menu:
+            guard let path = request.text, let menu = Self.menu(at: path) else {
+                return .failure("no menu at \(request.text ?? "nil")")
+            }
+            // What AppKit does before showing a menu: refresh, then validate.
+            menu.delegate?.menuNeedsUpdate?(menu)
+            menu.update()
+            if let title = request.name {
+                guard let index = menu.items.firstIndex(where: { $0.title == title }) else {
+                    return .failure("no item \(title) in \(path)")
+                }
+                handled = menu.items[index].isEnabled
+                if handled == true { menu.performActionForItem(at: index) }
+            } else {
+                let items = menu.items.map { $0.isSeparatorItem ? "-" : $0.isEnabled ? $0.title : "(\($0.title))" }
+                return ControlResponse(ok: true, items: items, state: controlState(front))
+            }
+        case .drop:
+            guard let paths = request.paths else { return .failure("drop needs paths") }
+            handled = front.openDropped(paths.map { URL(fileURLWithPath: $0) })
+        case .thumbnail:
+            guard let document = front.currentDocument, let page = request.page else {
+                return .failure("thumbnail needs a document and page")
+            }
+            document.thumbnails.activate(page: page)
         case .quit:
             Task { NSApp.terminate(nil) }
             return ControlResponse(ok: true)
@@ -72,6 +97,20 @@ extension AppDelegate {
         let front = NSApp.orderedWindows.first { $0.windowController is MainWindowController && $0.isVisible }
         let selected = front?.tabGroup?.selectedWindow ?? front
         return selected?.windowController as? MainWindowController ?? all.last
+    }
+
+    /// The menu bar submenu at a "/"-separated title path; the app menu is
+    /// "Silicon Reader" whatever the process is called.
+    private static func menu(at path: String) -> NSMenu? {
+        var menu = NSApp.mainMenu
+        for (depth, title) in path.split(separator: "/").map(String.init).enumerated() {
+            let items = menu?.items ?? []
+            let item =
+                depth == 0 && title == Command.Group.app.rawValue
+                ? items.first : items.first { $0.submenu?.title == title || $0.title == title }
+            menu = item?.submenu
+        }
+        return menu
     }
 
     private func isSettled(_ controller: MainWindowController?) -> Bool {
@@ -158,6 +197,8 @@ extension AppDelegate {
         let visible = NSApp.windows.filter { $0.windowController is MainWindowController && $0.isVisible }
         // Tabs of one window share a tab group; count each group once.
         let windowCount = Set(visible.map { ObjectIdentifier(($0.tabGroup as AnyObject?) ?? $0) }).count
+        let others = NSApp.windows.filter { $0.isVisible && !($0.windowController is MainWindowController) }
+        let panels: [String] = others.map(\.title).filter { !$0.isEmpty }
         return ControlState(
             document: controller.documentURL?.path,
             pageCount: canvas?.pageCount ?? 0,
@@ -172,6 +213,9 @@ extension AppDelegate {
                 ControlState.Match(page: $0.page, start: $0.range.lowerBound, end: $0.range.upperBound)
             },
             sidebarVisible: !(controller.currentDocument?.isSidebarCollapsed ?? true),
+            sidebarMode: controller.currentDocument?.sidebarMode.rawValue,
+            thumbnailPage: controller.currentDocument?.thumbnails.selectedPage,
+            panels: panels,
             presenting: canvas?.isPresenting ?? false,
             invertsColors: canvas?.invertsColors ?? false,
             subtitle: controller.window?.subtitle ?? "",

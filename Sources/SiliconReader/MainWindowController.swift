@@ -53,7 +53,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.thumbnails = thumbnails
         self.host = host
         self.persistsState = persistsState
-        let window = NSWindow(
+        let window = ReaderWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -66,6 +66,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.contentMinSize = Self.minimumSize
         super.init(window: window)
         window.delegate = self
+        window.onDrop = { [weak self] urls in self?.openDropped(urls) ?? false }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsDidChange(_:)), name: .settingsDidChange, object: nil)
 
         let toolbar = NSToolbar(identifier: "MainToolbar")
         toolbar.delegate = toolbarController
@@ -109,7 +112,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var documentURL: URL? { currentDocument?.engine.url }
 
     /// True once whatever is shown has finished rendering (debug snapshot hook).
-    var isSettled: Bool { canvas?.isSettled ?? true }
+    var isSettled: Bool { (canvas?.isSettled ?? true) && (currentDocument?.thumbnails.isIdle ?? true) }
 
     func showHome() {
         if presentation != nil { togglePresentation(nil) }
@@ -135,9 +138,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         stopWatching()
         if let url = documentURL, url != engine.url { host?.documentDidClose(url) }
 
-        let record = library.record(for: engine.url.path)
+        let settings = library.settings
+        let record = settings.rememberStatePerDocument ? library.record(for: engine.url.path) : nil
         let controller = DocumentViewController(
-            engine: engine, library: library, state: state ?? record?.state,
+            engine: engine, library: library, state: state ?? record?.state ?? settings.initialViewState,
             sidebarVisible: record?.sidebarVisible ?? currentDocument.map { !$0.isSidebarCollapsed })
         controller.onStateChange = { [weak self] in self?.toolbarController.update() }
         controller.canvas.onSearchStatus = { [weak self] status in self?.window?.subtitle = status ?? "" }
@@ -152,9 +156,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Remembers page, zoom, layout and sidebar for the shown document.
     func saveDocumentState() {
-        guard persistsState, let document = currentDocument, let canvas, canvas.layout.pageFrames.count > 0 else {
-            return
-        }
+        guard persistsState, library.settings.rememberStatePerDocument, let document = currentDocument, let canvas,
+            canvas.layout.pageFrames.count > 0
+        else { return }
         library.saveViewState(
             canvas.viewState, sidebarVisible: !document.isSidebarCollapsed, for: document.engine.url.path)
     }
@@ -162,6 +166,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Reload on change
 
     private func watch(_ url: URL) {
+        guard library.settings.reloadModifiedDocuments else { return }
         watcher = FileWatcher(url: url) { [weak self] in
             Task { @MainActor in self?.reloadAfterChange(of: url) }
         }
@@ -172,6 +177,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         watcher = nil
     }
 
+    /// Turning "reload on change" on or off in Settings applies to open documents too.
+    @objc private func settingsDidChange(_ note: Notification) {
+        stopWatching()
+        if let url = documentURL { watch(url) }
+    }
+
     /// Reopens the changed file keeping the view. A file caught mid-write
     /// fails to open silently; the next change event tries again.
     private func reloadAfterChange(of url: URL) {
@@ -180,6 +191,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         else { return }
         show(engine, state: state, countsAsOpen: false)
         flash("Reloaded: the file changed on disk")
+    }
+
+    /// Documents dropped on the window open like Open… from it: the first
+    /// replaces a home page, the rest become tabs. False if none could be opened.
+    @discardableResult
+    func openDropped(_ urls: [URL]) -> Bool {
+        let documents = urls.filter(DocumentOpener.canOpen)
+        var opened = false
+        for url in documents {
+            opened = host?.open(url, from: self) != nil || opened
+        }
+        return opened
     }
 
     /// Sends a menu action through this window's responder chain, starting at

@@ -21,6 +21,15 @@ public enum DocumentFormat: Equatable, Sendable {
 }
 
 public enum DocumentOpener {
+    /// Whether `url` is a file this reader opens (drag and drop filters with it).
+    public static func canOpen(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+            !isDirectory.boolValue
+        else { return false }
+        return DocumentFormat.detect(url) != nil
+    }
+
     /// Throws `EngineError.passwordRequired` for an encrypted PDF opened without a password.
     public static func open(_ url: URL, password: String? = nil) throws -> any DocumentEngine {
         switch DocumentFormat.detect(url) {

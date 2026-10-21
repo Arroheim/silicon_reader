@@ -26,6 +26,14 @@ public struct ControlRequest: Codable, Sendable, Equatable {
         /// without sending it. With `chars`/`modifiers` instead of `name`, report
         /// the action of the menu item bound to that shortcut.
         case resolve
+        /// List the menu at `text` ("File/Open Recent") in `ControlResponse.items`,
+        /// refreshed the way AppKit does before showing it; with `name`, choose
+        /// the item with that title instead.
+        case menu
+        /// Drop the files at `paths` on the front window, as a Finder drag does.
+        case drop
+        /// Click the sidebar thumbnail of `page`.
+        case thumbnail
         case quit
     }
 
@@ -39,13 +47,15 @@ public struct ControlRequest: Codable, Sendable, Equatable {
     public var start: Int?
     public var end: Int?
     public var path: String?
+    public var paths: [String]?
     public var timeout: Double?
 
     public init(
         _ cmd: Command, chars: String? = nil, modifiers: [String]? = nil, name: String? = nil, text: String? = nil,
         forward: Bool? = nil, page: Int? = nil, start: Int? = nil, end: Int? = nil, path: String? = nil,
-        timeout: Double? = nil
+        paths: [String]? = nil, timeout: Double? = nil
     ) {
+        self.paths = paths
         self.cmd = cmd
         self.chars = chars
         self.modifiers = modifiers
@@ -67,12 +77,16 @@ public struct ControlResponse: Codable, Sendable, Equatable {
     public var handled: Bool?
     /// For `resolve`: class name of the responder that would handle the action.
     public var target: String?
+    /// For `menu`: titles of the menu's items ("-" for separators, disabled ones in parentheses).
+    public var items: [String]?
     public var state: ControlState?
 
     public init(
-        ok: Bool, error: String? = nil, handled: Bool? = nil, target: String? = nil, state: ControlState? = nil
+        ok: Bool, error: String? = nil, handled: Bool? = nil, target: String? = nil, items: [String]? = nil,
+        state: ControlState? = nil
     ) {
         self.ok = ok
+        self.items = items
         self.error = error
         self.handled = handled
         self.target = target
@@ -111,6 +125,12 @@ public struct ControlState: Codable, Sendable, Equatable {
     public var searchQuery: String?
     public var match: Match?
     public var sidebarVisible: Bool
+    /// "bookmarks" or "thumbnails"; nil on the home page.
+    public var sidebarMode: String?
+    /// 0-based page selected in the thumbnails, if any.
+    public var thumbnailPage: Int?
+    /// Titles of other visible windows (Settings, Document Properties, …).
+    public var panels: [String]
     public var presenting: Bool
     public var invertsColors: Bool
     public var subtitle: String
@@ -125,9 +145,13 @@ public struct ControlState: Codable, Sendable, Equatable {
     public init(
         document: String?, pageCount: Int, page: Int, zoom: Zoom?, zoomPercent: Double, mode: ViewMode?,
         rotation: Int, selectedText: String, searchQuery: String?, match: Match?, sidebarVisible: Bool,
-        presenting: Bool, invertsColors: Bool, subtitle: String, openDocuments: [String], frontTabs: [String] = [],
+        sidebarMode: String? = nil, thumbnailPage: Int? = nil, panels: [String] = [], presenting: Bool,
+        invertsColors: Bool, subtitle: String, openDocuments: [String], frontTabs: [String] = [],
         windowCount: Int = 1, settled: Bool
     ) {
+        self.sidebarMode = sidebarMode
+        self.thumbnailPage = thumbnailPage
+        self.panels = panels
         self.document = document
         self.pageCount = pageCount
         self.page = page

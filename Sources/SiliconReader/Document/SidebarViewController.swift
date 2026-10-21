@@ -30,23 +30,39 @@ final class SidebarNode: NSObject {
     }
 }
 
-/// SumatraPDF's sidebar: the document's bookmarks (table of contents) and favorites.
+/// SumatraPDF's sidebar: the document's bookmarks (table of contents) and
+/// favorites, plus page thumbnails (which Sumatra lacks), one at a time.
 @MainActor
 final class SidebarViewController: NSViewController {
+    enum Mode: String {
+        case bookmarks, thumbnails
+    }
+
     private let engine: any DocumentEngine
     private let library: Library
     private let onNavigate: (Destination) -> Void
     private let outline: [OutlineItem]
     private var groups: [SidebarNode] = []
     private let outlineView = NSOutlineView()
+    private lazy var outlineScroll = makeOutlineScroll()
+    let thumbnails: PageThumbnailsController
+    private let modePicker = NSSegmentedControl(
+        labels: ["Bookmarks", "Thumbnails"], trackingMode: .selectOne, target: nil, action: nil)
+    private let content = NSView()
+
+    /// Bookmarks when the document has any, thumbnails otherwise.
+    private(set) var mode: Mode
 
     init(engine: any DocumentEngine, library: Library, onNavigate: @escaping (Destination) -> Void) {
         self.engine = engine
         self.library = library
         self.onNavigate = onNavigate
         self.outline = engine.outline()
+        thumbnails = PageThumbnailsController(engine: engine) { onNavigate(.page($0)) }
+        mode = .bookmarks
         super.init(nibName: nil, bundle: nil)
         groups = buildGroups()
+        if groups.isEmpty { mode = .thumbnails }
     }
 
     @available(*, unavailable)
@@ -54,10 +70,57 @@ final class SidebarViewController: NSViewController {
         fatalError("init(coder:) is not supported")
     }
 
-    /// Whether there is anything to show; the sidebar starts collapsed otherwise.
+    /// Whether there are bookmarks or favorites; the sidebar starts collapsed
+    /// otherwise (thumbnails alone don't open it, as Sumatra keeps it closed).
     var hasContent: Bool { !groups.isEmpty }
 
     override func loadView() {
+        modePicker.target = self
+        modePicker.action = #selector(modePicked(_:))
+        modePicker.segmentStyle = .automatic
+        modePicker.controlSize = .small
+        for view in [modePicker, content] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+        }
+        let container = NSView()
+        container.addSubview(modePicker)
+        container.addSubview(content)
+        NSLayoutConstraint.activate([
+            modePicker.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 6),
+            modePicker.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            content.topAnchor.constraint(equalTo: modePicker.bottomAnchor, constant: 6),
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        view = container
+        reload()
+        show(mode)
+    }
+
+    /// Switches between bookmarks and thumbnails.
+    func show(_ mode: Mode) {
+        self.mode = mode
+        guard isViewLoaded else { return }
+        modePicker.selectedSegment = mode == .bookmarks ? 0 : 1
+        let shown = mode == .bookmarks ? outlineScroll : thumbnails.scrollView
+        guard shown.superview !== content else { return }
+        content.subviews.forEach { $0.removeFromSuperview() }
+        shown.frame = content.bounds
+        shown.autoresizingMask = [.width, .height]
+        content.addSubview(shown)
+    }
+
+    @objc private func modePicked(_ sender: NSSegmentedControl) {
+        show(sender.selectedSegment == 0 ? .bookmarks : .thumbnails)
+    }
+
+    /// Follows the canvas's current page in the thumbnails.
+    func currentPageChanged(_ page: Int) {
+        thumbnails.show(page: page)
+    }
+
+    private func makeOutlineScroll() -> NSScrollView {
         outlineView.style = .sourceList
         outlineView.headerView = nil
         outlineView.floatsGroupRows = false
@@ -76,13 +139,13 @@ final class SidebarViewController: NSViewController {
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
-        view = scroll
-        reload()
+        return scroll
     }
 
     func reload() {
         groups = buildGroups()
         guard isViewLoaded else { return }
+        _ = outlineScroll
         outlineView.reloadData()
         for group in groups { expand(group) }
     }
@@ -110,7 +173,7 @@ final class SidebarViewController: NSViewController {
     }
 
     func focus() {
-        view.window?.makeFirstResponder(outlineView)
+        view.window?.makeFirstResponder(mode == .bookmarks ? outlineView : thumbnails.tableView)
     }
 
     @objc private func rowClicked(_ sender: Any?) {

@@ -24,8 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         directory: library.url.deletingLastPathComponent().appendingPathComponent("thumbnails"))
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.build()
+        NSApp.mainMenu = MainMenu.build(recentMenuDelegate: recentMenu)
     }
+
+    private lazy var recentMenu = RecentMenuDelegate(app: self)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Paths passed on the command line (`SiliconReader file.pdf`); AppKit
@@ -33,7 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for path in Self.documentArguments(CommandLine.arguments.dropFirst()) {
             openFile(URL(fileURLWithPath: path))
         }
-        if windows.isEmpty && !openedAtLaunch && !(persists && restoreSession()) {
+        let restores = persists && library.settings.restoreSession
+        if windows.isEmpty && !openedAtLaunch && !(restores && restoreSession()) {
             newHomeWindow()
         }
         NSApp.activate()
@@ -124,12 +127,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `-snapshotWindow palette|properties` captures that window instead of the document window.
+    /// `-snapshotWindow palette|properties|settings|about` captures that window instead of the document window.
     private static func snapshotTarget(_ controller: MainWindowController) -> Data? {
         let window: NSWindow? =
             switch UserDefaults.standard.string(forKey: "snapshotWindow") {
             case "palette": NSApp.windows.first { $0 is PalettePanel && $0.isVisible }
             case "properties": NSApp.windows.first { $0.title == "Document Properties" && $0.isVisible }
+            case "settings": NSApp.windows.first { $0.title == "Settings" && $0.isVisible }
+            // AppKit's standard About panel has no public class or title.
+            case "about": NSApp.windows.first { !($0.windowController is MainWindowController) && $0.isVisible }
             default: controller.window
             }
         guard let view = window?.contentView?.superview ?? window?.contentView,
@@ -278,6 +284,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let help = keyboardHelp ?? KeyboardHelpWindowController()
         keyboardHelp = help
         help.showWindow(nil)
+    }
+
+    private(set) var settingsWindow: SettingsWindowController?
+
+    @objc func showSettings(_ sender: Any?) {
+        let settings = settingsWindow ?? SettingsWindowController(library: library)
+        settingsWindow = settings
+        settings.showWindow(nil)
+    }
+
+    @objc func showAbout(_ sender: Any?) {
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: AboutCredits.text()])
+    }
+
+    // MARK: - Open Recent
+
+    /// Number of files listed in File ▸ Open Recent.
+    static let recentLimit = 15
+
+    /// Existing files from the history, newest first.
+    var recentDocuments: [URL] {
+        library.recent(limit: Self.recentLimit * 2)
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .prefix(Self.recentLimit)
+            .map { URL(fileURLWithPath: $0.path) }
+    }
+
+    @objc func openRecentDocument(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openFile(url)
+    }
+
+    @objc func clearRecentDocuments(_ sender: Any?) {
+        library.clearRecent()
+        NSDocumentController.shared.clearRecentDocuments(nil)
     }
 
     /// Opens a document like SumatraPDF: an already open file gets focus, a
