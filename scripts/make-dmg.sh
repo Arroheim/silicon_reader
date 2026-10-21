@@ -12,6 +12,15 @@ installing is "open the DMG, drag the app onto Applications". Also writes
 EOF
 }
 
+# Global, not local to main: the EXIT trap runs after main has returned.
+staging=""
+
+cleanup() {
+    if [[ -n "$staging" ]]; then
+        rm -rf "$staging"
+    fi
+}
+
 main() {
     if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
         usage
@@ -29,9 +38,8 @@ main() {
         exit 1
     fi
 
-    local staging
     staging="$(mktemp -d)"
-    trap 'rm -rf "$staging"' EXIT
+    trap cleanup EXIT
     cp -R "$app" "$staging/"
     ln -s /Applications "$staging/Applications"
 
