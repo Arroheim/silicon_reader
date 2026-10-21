@@ -62,7 +62,7 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] README.md + README.ru.md in the tgbookhunter style (badges, sections, tables),
       screenshots, keyboard reference
 - [x] CHANGELOG.md (Keep a Changelog; the release notes are cut from it)
-- [x] Source artwork moved to `docs/assets/icon-source-v*.png`, screenshots next to it
+- [x] Source artwork moved to `docs/assets/icon-source-v1.png`, screenshots next to it
 - [x] Release workflow: a `v*` tag runs lint/test/e2e, builds the DMG and publishes a
       GitHub release (`make release VERSION=x.y.z`, then push the tag)
 - [x] GitHub repo: https://github.com/Arroheim/silicon_reader (public; first CI run green)
@@ -71,11 +71,12 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
-- [ ] Liquid Glass (SDK 26+ on macOS 26+): toolbar capsules float over the canvas and
-      cover the title — try `UIDesignRequiresCompatibility` on macOS 27, otherwise lay
-      the canvas and sidebar out below the toolbar (1.0.1)
-- [ ] Run the built app on macOS 14 in CI (smoke + e2e on a `macos-14` runner): today
-      macOS 14 support is checked statically only
+- [x] Liquid Glass (SDK 26+ on macOS 26+): the canvas covered the title and slid under
+      the floating toolbar. `UIDesignRequiresCompatibility` is ignored on macOS 27, so
+      the canvas is laid out below the toolbar (e2e `canvasUnderToolbar`), 1.0.1
+- [x] The built app runs smoke + e2e on a `macos-14` runner in CI and before every release
+- [x] Source artwork: only `icon-source-v1.png` is kept (v2, with the baked-in
+      checkerboard, was the source of `Resources/AppIcon.png` and isn't needed any more)
 
 ### Library check
 

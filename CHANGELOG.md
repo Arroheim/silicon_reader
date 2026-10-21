@@ -10,6 +10,24 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-21
+
+### Fixed
+
+- macOS 26 and later: pages no longer slide under the toolbar and cover the window
+  title (the new Liquid Glass toolbar floats over the content). The canvas now
+  starts below the toolbar on every macOS version.
+
+### Changed
+
+- Every build is tested on macOS 14 too: CI and the release workflow run the
+  smoke and end-to-end tests of the very app that goes into the DMG on a macOS 14
+  runner, and the release is published only if they pass.
+- Local builds record the real SDK, so they look the same as the published app;
+  `make app` checks that the app still targets macOS 14 and links only system
+  libraries.
+- New README screenshots.
+
 ## [1.0.0] - 2026-10-21
 
 ### Added
