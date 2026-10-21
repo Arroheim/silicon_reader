@@ -31,7 +31,10 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [ ] Two displays with different scale factors; moving a window between them
 - [ ] Live switch between light and dark appearance
 - [ ] Large documents: 1000+ page PDF, heavy scanned DjVu — scroll speed, memory
+      (rendering itself is covered by `make check-library`, see below)
 - [ ] Corrupted / truncated files: no crash, a readable error
+- [ ] Tab switching with ⌘} / ⌘{ (e2e only checks the wiring: NSWindow enables
+      these actions only in the key window, which a background test run doesn't get)
 - [ ] Session restore with several windows and tabs (check the small scroll offset
       seen after restoring two tabs in phase 1)
 
@@ -45,16 +48,39 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 
 ### Packaging
 
-- [ ] Version 1.0.0 from one place (`Info.plist` ← Makefile `VERSION`), shown in About
+- [x] Version from one place: the git tag (or `VERSION=`) is written into the bundled
+      `Info.plist` by `make app`, build number = commit count
 - [ ] About box: credits for MuPDF (AGPL-3.0), djvudec (MIT), fixtures (GPL)
-- [ ] `make dmg`: DMG with the app and an Applications link
+- [x] `make dmg`: DMG with the app and an Applications link, plus a `.sha256`
 - [ ] Signing: ad-hoc today. Developer ID signing + notarization needs an Apple
       Developer account — decide before publishing binaries
-- [ ] README.md + README.ru.md in the tgbookhunter style (badges, sections, tables),
+- [x] README.md + README.ru.md in the tgbookhunter style (badges, sections, tables),
       screenshots, keyboard reference
-- [ ] CHANGELOG.md
-- [ ] Move `Sicon.png` / `Siicon2.png` (source artwork) into `Resources/` or out of the repo
-- [ ] CI: build the DMG on tags, attach it to a GitHub release; tag `v1.0.0`
+- [x] CHANGELOG.md (Keep a Changelog; the release notes are cut from it)
+- [x] Source artwork moved to `docs/assets/icon-source-v*.png`, screenshots next to it
+- [x] Release workflow: a `v*` tag runs lint/test/e2e, builds the DMG and publishes a
+      GitHub release (`make release VERSION=x.y.z`, then push the tag)
+- [ ] Create the GitHub repo — README badges and links assume `Arroheim/silicon_reader`
+- [ ] Rename `[Unreleased]` in CHANGELOG.md to `[1.0.0]` and tag `v1.0.0`
+
+### Library check
+
+`make check-library DIR=… [ALL_PAGES=1]` runs `reader-check` over a folder: one
+process per file, so a crash or hang is reported instead of stopping the run.
+
+- [x] 1 332 real books (PDF + DjVu): first, middle and last page of each — found the
+      djvudec bug below
+- [x] Fixed: djvudec truncated INCL component ids to 63 bytes, so pages sharing a JB2
+      dictionary failed to render (`Vendor/djvudec/PATCHES.md`)
+- [ ] Regression fixture: a small DjVu whose INCL id is longer than 63 bytes
+- [ ] Report the INCL bug upstream to kjk/djvudec
+- [x] Every page of the same library (`ALL_PAGES=1`): 514 088 pages, 0 crashes, 0 hangs;
+      the one failure (page 35 of "Введение в теорию чисел", 1984.djvu) is corrupt JB2 data —
+      DjVuLibre's `ddjvu` fails on it too
+- [ ] A page that fails to decode: show a readable placeholder in the canvas (check
+      what it looks like today), like Sumatra does
+- [ ] Peak memory 749 MB while sweeping a whole book in one process — fine for a checker,
+      but worth a look together with the `TextStore` cache bound below
 
 ## Gap to SumatraPDF for PDF/DjVu
 
