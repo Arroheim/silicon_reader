@@ -11,6 +11,11 @@ MUPDF_OUT   := $(BUILD_DIR)/deps/mupdf
 MUPDF_STAMP := $(MUPDF_OUT)/.built
 JOBS        := $(shell sysctl -n hw.ncpu)
 
+# Version from the latest v* tag (v1.0.0 → 1.0.0) unless given; build number = commit count.
+VERSION      ?= $(or $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//'),0.1.0)
+BUILD_NUMBER ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
+DMG          := $(BUILD_DIR)/$(APP_NAME)-$(VERSION).dmg
+
 # swiftbuild intermittently drops the swift-testing macro plugin when building
 # with the Command Line Tools toolchain ("plugin for module 'TestingMacros' not
 # found"). Loading it explicitly makes the build deterministic.
@@ -20,7 +25,7 @@ TEST_FLAGS     := $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-libra
 MUPDF_FLAGS := build=release HAVE_X11=no HAVE_GLUT=no HAVE_CURL=no \
 	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=14.0
 
-.PHONY: help deps build test e2e lint format app smoke run clean distclean
+.PHONY: help deps build test e2e lint format app dmg release smoke check-library run clean distclean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -48,9 +53,22 @@ lint: ## Check formatting with swift-format
 format: ## Reformat sources in place with swift-format
 	swift format --in-place --recursive Package.swift Sources Tests
 
-app: ## Assemble an ad-hoc signed .app bundle (release build)
+app: ## Assemble an ad-hoc signed .app bundle (release build, VERSION=x.y.z)
 	$(MAKE) build CONFIG=release
-	scripts/bundle-app.sh "$$(swift build -c release --show-bin-path)/$(APP_NAME)" "$(APP)"
+	scripts/bundle-app.sh "$$(swift build -c release --show-bin-path)/$(APP_NAME)" "$(APP)" \
+		"$(VERSION)" "$(BUILD_NUMBER)"
+
+dmg: app ## Pack the app into build/SiliconReader-$(VERSION).dmg (+ .sha256)
+	scripts/make-dmg.sh "$(APP)" "$(DMG)"
+
+release: ## Tag a release: make release VERSION=1.0.0 (checks tree, changelog and tests; push the tag yourself)
+	@[[ "$(origin VERSION)" == "command line" ]] || { echo "usage: make release VERSION=x.y.z"; exit 64; }
+	@[[ -z "$$(git status --porcelain)" ]] || { echo "error: working tree is not clean"; exit 1; }
+	@! git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null || { echo "error: tag v$(VERSION) exists"; exit 1; }
+	scripts/release-notes.sh "$(VERSION)" >/dev/null
+	$(MAKE) lint test e2e
+	git tag -a "v$(VERSION)" -m "Silicon Reader $(VERSION)"
+	@echo "Tagged v$(VERSION). Publish with: git push origin v$(VERSION)"
 
 SMOKE_DOCS := Tests/ReaderCoreTests/Fixtures/djvu2spec.djvu \
 	"$(MUPDF_SRC)/thirdparty/lcms2/doc/LittleCMS2.19 tutorial.pdf"
