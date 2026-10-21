@@ -24,6 +24,9 @@ the same engines Sumatra uses.
 - ⌨️ **Sumatra's keyboard map** adapted to macOS — `j` `k` `n` `p` `z` `c` `[` `]`, ⌘K palette,
   `?` for the full list
 - 🗂️ **Tabs, bookmarks and favorites** — native tabs, table of contents and favorites in the sidebar
+- 🖼️ **Page thumbnails** in the sidebar that follow the page you read
+- 📂 **Open Recent** and **drag and drop** — drop files on a window to open them as tabs
+- ⚙️ **Settings** — default layout and zoom, what to remember, session restore, auto reload
 - 🏠 **Home page** with "Frequently Read" thumbnails
 - 🔎 **Find** with highlights for every match, match case, ⌘G / ⇧⌘G
 - ✂️ **Text selection and copy**, double/triple click, zoom to selection, clickable links
@@ -85,6 +88,8 @@ The most used shortcuts; press `?` in the app for all of them.
 | `⌘K` (or `>` `@` `#` `$` `%`) | Command palette (commands, tabs, recent, favorites, bookmarks) |
 | `⌘D` | Add to favorites |
 | `⌃⌘S` | Show / hide sidebar |
+| `⌥⌘2` / `⌥⌘3` | Sidebar: page thumbnails / bookmarks |
+| `⌘,` | Settings |
 | `⇧⌘F`, `f` | Presentation, full screen |
 | `⇧I` | Invert colors |
 | `⇧⌘→` `⇧⌘←` | Next / previous file in the folder |

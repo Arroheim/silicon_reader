@@ -10,8 +10,17 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-21
+
 ### Added
 
+- Settings window (⌘,): default layout and zoom, remember each document's view,
+  restore the session, reload changed files.
+- File ▸ Open Recent, built from the reading history, with Clear Menu.
+- Drag and drop: documents dropped on a window open as tabs.
+- Page thumbnails in the sidebar (⌥⌘2), next to bookmarks (⌥⌘3); they follow
+  the current page and navigate on click.
+- About Silicon Reader with the author and credits.
 - PDF (MuPDF 1.28) and DjVu (djvudec) engines: rendering, text layer, outline,
   links, page labels, document properties, password-protected PDFs.
 - SumatraPDF's layouts: single page, facing, book view, each continuous or paged;

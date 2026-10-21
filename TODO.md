@@ -40,17 +40,22 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 
 ### Release-blocking gaps
 
-- [ ] **Open Recent** menu (File ▸ Open Recent) — history exists, the menu doesn't
-- [ ] **Drag and drop** a document onto a window / the Dock icon
-- [ ] **Settings window** (⌘,) with the essentials: default zoom and layout,
-      remember state per document on/off, restore session on/off, reload on change
+- [x] **Open Recent** menu (File ▸ Open Recent), built from the history; Clear Menu
+      keeps per-file state and favorites
+- [x] **Drag and drop** documents onto a window (they open as tabs); the Dock icon
+      takes them through the declared document types
+- [x] **Settings window** (⌘,): default zoom and layout, remember state per document,
+      restore session, reload on change — stored in the library file
+- [x] **Page thumbnails** in the sidebar (⌥⌘2; bookmarks ⌥⌘3), following the current page
 - [ ] Single-key shortcuts visible in menus (today only in the `?` help and tooltips)
+- [ ] Manual check: drop a file from Finder on a window and on the Dock icon (e2e
+      drives the drop handler, not a real drag session)
 
 ### Packaging
 
 - [x] Version from one place: the git tag (or `VERSION=`) is written into the bundled
       `Info.plist` by `make app`, build number = commit count
-- [ ] About box: credits for MuPDF (AGPL-3.0), djvudec (MIT), fixtures (GPL)
+- [x] About box: author (Stanislav Seredkin aka Itterheim aka Arronax, e-mail), repository link, MuPDF / djvudec / SumatraPDF credits
 - [x] `make dmg`: DMG with the app and an Applications link, plus a `.sha256`
 - [ ] Signing: ad-hoc today. Developer ID signing + notarization needs an Apple
       Developer account — decide before publishing binaries
@@ -61,7 +66,8 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] Release workflow: a `v*` tag runs lint/test/e2e, builds the DMG and publishes a
       GitHub release (`make release VERSION=x.y.z`, then push the tag)
 - [ ] Create the GitHub repo — README badges and links assume `Arroheim/silicon_reader`
-- [ ] Rename `[Unreleased]` in CHANGELOG.md to `[1.0.0]` and tag `v1.0.0`
+- [x] CHANGELOG.md has its `[1.0.0]` section
+- [ ] `make release VERSION=1.0.0`, then `git push origin v1.0.0`
 
 ### Library check
 
@@ -92,11 +98,10 @@ expected value for everyday reading.
 | Annotations: highlight, underline, strike-out, notes, freehand | `a`/`u` keys, edit panel, save | MuPDF can create and save them (`pdf_*` annotation API) |
 | PDF forms: fill, save | partial | MuPDF widgets API |
 | SyncTeX forward/inverse search | yes | for LaTeX users; needs a CLI entry point and editor command setting |
-| Settings and advanced settings file | Options dialog + `SumatraPDF-settings.txt` | see 1.0 for the essentials |
+| Advanced settings | `SumatraPDF-settings.txt` | 1.0 has the essentials in Settings (⌘,) |
 | Themes beyond system light/dark | ~20 themes | theme = colors for chrome + canvas |
 | Rectangle selection → copy as image | Ctrl+drag | |
 | Keyboard text selection, keyboard link following | F7, Shift+F | |
-| Page thumbnails | sidebar / `&` navigation | |
 | Read Aloud | toolbar button | AVSpeechSynthesizer |
 | Favorites of all files in the sidebar | yes | we show the current file's |
 | Fonts list in Properties | yes | MuPDF can enumerate fonts |
