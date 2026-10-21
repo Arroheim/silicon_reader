@@ -207,7 +207,9 @@ extension DocumentView {
                     text: store.text(_:),
                     progress: { page in
                         guard page % 10 == 0 else { return }
-                        Task { @MainActor in self?.onSearchStatus("Searching page \(page + 1) of \(pageCount)…") }
+                        // Capture the finished string: Swift 6.0 rejects sending `page` itself.
+                        let status = "Searching page \(page + 1) of \(pageCount)…"
+                        Task { @MainActor [status] in self?.onSearchStatus(status) }
                     },
                     isCancelled: { Task.isCancelled })
             }.value
