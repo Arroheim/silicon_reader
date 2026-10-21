@@ -65,7 +65,7 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] Source artwork moved to `docs/assets/icon-source-v*.png`, screenshots next to it
 - [x] Release workflow: a `v*` tag runs lint/test/e2e, builds the DMG and publishes a
       GitHub release (`make release VERSION=x.y.z`, then push the tag)
-- [ ] Create the GitHub repo — README badges and links assume `Arroheim/silicon_reader`
+- [x] GitHub repo: https://github.com/Arroheim/silicon_reader (public; first CI run green)
 - [x] CHANGELOG.md has its `[1.0.0]` section
 - [ ] `make release VERSION=1.0.0`, then `git push origin v1.0.0`
 
