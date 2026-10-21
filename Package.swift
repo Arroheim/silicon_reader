@@ -40,6 +40,11 @@ let package = Package(
             name: "SiliconReader",
             dependencies: ["ReaderCore"]
         ),
+        // Batch-checks real documents with the reader's engines: `make check-library DIR=…`.
+        .executableTarget(
+            name: "ReaderCheck",
+            dependencies: ["ReaderCore"]
+        ),
         .testTarget(
             name: "ReaderCoreTests",
             dependencies: ["ReaderCore"],

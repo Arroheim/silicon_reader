@@ -74,6 +74,15 @@ smoke: app ## Open sample PDF/DjVu in several view modes, then the home page; sn
 	"$(APP)/Contents/MacOS/$(APP_NAME)" -library "$(SMOKE_LIBRARY)" -snapshot "$(SMOKE_DIR)/home.png"
 	echo "ok $(SMOKE_DIR)/home.png"
 
+CHECK_JOBS    ?= $(shell echo $$(( $(JOBS) / 2 )))
+CHECK_TIMEOUT ?= 180
+
+check-library: deps ## Check every PDF/DjVu under DIR (ALL_PAGES=1 renders every page); report in build/check
+	@test -n "$(DIR)" || { echo "usage: make check-library DIR=/path/to/books [ALL_PAGES=1]"; exit 64; }
+	swift build -c release --product ReaderCheck
+	"$$(swift build -c release --show-bin-path)/ReaderCheck" --batch "$(DIR)" --jobs $(CHECK_JOBS) \
+		--timeout $(CHECK_TIMEOUT) --report $(BUILD_DIR)/check/report.jsonl $(if $(ALL_PAGES),--all-pages)
+
 run: app ## Build and launch the app (FILE=path/to/doc to open a document)
 	open "$(APP)" $(if $(FILE),--args "$(abspath $(FILE))")
 
