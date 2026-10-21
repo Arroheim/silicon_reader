@@ -57,3 +57,66 @@ jobs:
           name: smoke-snapshots
           path: build/smoke/
           if-no-files-found: ignore
+
+      # A tarball keeps the executable bit and the signature, which a plain
+      # artifact upload would not.
+      - name: Pack the app for the macOS 14 job
+        run: tar -czf build/SiliconReader.app.tgz -C build SiliconReader.app
+
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: build/SiliconReader.app.tgz
+
+  # The app above is linked against the runner's newest SDK; run that very
+  # binary on the oldest macOS it supports.
+  macos-14:
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+
+      - name: Download the app
+        uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: build
+
+      - name: Unpack the app
+        run: tar -xzf build/SiliconReader.app.tgz -C build
+
+      - name: Resolve MuPDF revision
+        id: mupdf
+        run: echo "rev=$(git rev-parse HEAD:Vendor/mupdf)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache MuPDF build
+        uses: actions/cache@v4
+        with:
+          path: build/deps/mupdf
+          key: mupdf-macos14-${{ runner.arch }}-${{ steps.mupdf.outputs.rev }}-${{ hashFiles('Makefile') }}
+
+      # The e2e tests link ReaderCore, which needs MuPDF.
+      - name: Build MuPDF
+        run: make deps
+
+      - name: Smoke test on macOS 14
+        run: make smoke-prebuilt
+
+      - name: End-to-end tests on macOS 14
+        run: make e2e-prebuilt
+
+      - name: Upload macOS 14 snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-snapshots-macos14
+          path: build/smoke/
+          if-no-files-found: ignore

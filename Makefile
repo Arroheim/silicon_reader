@@ -38,10 +38,11 @@ TEST_FLAGS     := $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-libra
 MUPDF_FLAGS := build=release HAVE_X11=no HAVE_GLUT=no HAVE_CURL=no \
 	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=$(MIN_MACOS)
 
-.PHONY: help deps build test e2e lint format app dmg release smoke check-library run clean distclean
+.PHONY: help deps build test e2e e2e-prebuilt lint format app dmg release smoke smoke-prebuilt check-library run \
+	clean distclean
 
 help: ## Show available targets
-	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z0-9-]+:.*## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 deps: $(MUPDF_STAMP) ## Fetch submodules and build MuPDF static libraries
 
@@ -57,7 +58,11 @@ build: deps ## Build the app binary (CONFIG=debug|release)
 test: deps ## Run unit tests
 	swift test $(SWIFT_FLAGS) $(TEST_FLAGS) --skip E2ETests
 
-e2e: app ## Run end-to-end tests against the built app over its control channel
+e2e: app e2e-prebuilt ## Run end-to-end tests against the built app over its control channel
+
+# The -prebuilt targets test build/SiliconReader.app as it is, e.g. one built on a
+# newer macOS and copied to the CI job that runs it on the oldest supported one.
+e2e-prebuilt: ## Run end-to-end tests against an existing build/SiliconReader.app
 	SILICON_READER_APP="$(abspath $(APP))" swift test $(SWIFT_FLAGS) $(TEST_FLAGS) --filter E2ETests
 
 lint: ## Check formatting with swift-format
@@ -94,7 +99,9 @@ SMOKE_DIR := $(BUILD_DIR)/smoke
 # A throwaway library so smoke runs never touch the user's history.
 SMOKE_LIBRARY := $(SMOKE_DIR)/library.json
 
-smoke: app ## Open sample PDF/DjVu in several view modes, then the home page; snapshots go to build/smoke
+smoke: app smoke-prebuilt ## Open sample PDF/DjVu in several view modes, then the home page; snapshots go to build/smoke
+
+smoke-prebuilt: ## Take the smoke snapshots with an existing build/SiliconReader.app
 	rm -rf "$(SMOKE_DIR)" && mkdir -p "$(SMOKE_DIR)"
 	for doc in $(SMOKE_DOCS); do \
 		for view in $(SMOKE_VIEWS); do \

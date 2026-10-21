@@ -49,11 +49,69 @@ jobs:
       - name: Build DMG
         run: make dmg VERSION="${{ steps.version.outputs.version }}"
 
+      # A tarball keeps the executable bit and the signature for the macOS 14 job.
+      - name: Pack the app
+        run: tar -czf build/SiliconReader.app.tgz -C build SiliconReader.app
+
+      - name: Upload the release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            build/SiliconReader-${{ steps.version.outputs.version }}.dmg
+            build/SiliconReader-${{ steps.version.outputs.version }}.dmg.sha256
+            build/SiliconReader.app.tgz
+            build/release-notes.md
+
+  # Run the very app that goes into the DMG on the oldest macOS it supports.
+  macos-14:
+    needs: release
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+
+      - name: Download the release files
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: build
+
+      - name: Unpack the app
+        run: tar -xzf build/SiliconReader.app.tgz -C build
+
+      # The e2e tests link ReaderCore, which needs MuPDF.
+      - name: Build MuPDF
+        run: make deps
+
+      - name: Smoke test on macOS 14
+        run: make smoke-prebuilt
+
+      - name: End-to-end tests on macOS 14
+        run: make e2e-prebuilt
+
+  publish:
+    needs: macos-14
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the release files
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: build
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          version="${{ steps.version.outputs.version }}"
+          version="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" \
             "build/SiliconReader-${version}.dmg" \
             "build/SiliconReader-${version}.dmg.sha256" \

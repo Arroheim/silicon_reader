@@ -55,7 +55,8 @@
 xattr -dr com.apple.quarantine /Applications/SiliconReader.app
 ```
 
-Нужна macOS 14 или новее на Apple Silicon.
+Нужна macOS 14 или новее на Apple Silicon. Каждый релиз тестируется и на macOS 14, и на
+последней macOS.
 
 ## 🚀 Быстрый старт (из исходников)
 
@@ -128,6 +129,7 @@ Tests/
 | `make lint` / `make format` | Проверка / переформатирование `swift format` |
 | `make app` | Release-сборка в `build/SiliconReader.app` |
 | `make smoke` | Открывает тестовые документы в нескольких режимах и сохраняет снимки окна |
+| `make e2e-prebuilt` / `make smoke-prebuilt` | То же против уже собранного `build/SiliconReader.app` (CI гоняет их на macOS 14) |
 | `make check-library DIR=…` | Открывает каждый PDF/DjVu в папке, рендерит выборочные страницы (или все с `ALL_PAGES=1`), выдаёт отчёт о сбоях |
 | `make dmg` | Упаковывает приложение в `build/SiliconReader-<версия>.dmg` |
 | `make release VERSION=x.y.z` | Проверяет, тестирует и ставит тег релиза |
@@ -161,7 +163,8 @@ Tests/
 | [djvudec](https://github.com/kjk/djvudec) | `cfd3251` + [локальный патч](Vendor/djvudec/PATCHES.md) | MIT | `djvu.c` / `djvu.h` в репозитории |
 | Swift Testing | из тулчейна | Apache-2.0 | unit и e2e тесты |
 
-Тулчейн: Swift 6, macOS 14+ SDK, Apple Silicon.
+Тулчейн: Swift 6 и самый новый macOS SDK, какой есть; приложение нацелено на macOS 14
+(`MIN_MACOS` в Makefile, проверяет `scripts/check-binary.sh`). Apple Silicon.
 
 ## 🗺️ Планы
 

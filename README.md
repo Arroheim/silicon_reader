@@ -54,7 +54,8 @@ The app is not notarized by Apple yet, so macOS blocks the first launch. Either 
 xattr -dr com.apple.quarantine /Applications/SiliconReader.app
 ```
 
-Requires macOS 14 or later on Apple Silicon.
+Requires macOS 14 or later on Apple Silicon. Every release is tested on macOS 14 and
+on the latest macOS.
 
 ## 🚀 Quick Start (from source)
 
@@ -127,6 +128,7 @@ Tests/
 | `make lint` / `make format` | `swift format` check / rewrite |
 | `make app` | Release build wrapped into `build/SiliconReader.app` |
 | `make smoke` | Open sample documents in several view modes and save window snapshots |
+| `make e2e-prebuilt` / `make smoke-prebuilt` | The same against an existing `build/SiliconReader.app` (CI runs them on macOS 14) |
 | `make check-library DIR=…` | Open every PDF/DjVu under a folder, render sample pages (or all with `ALL_PAGES=1`), report failures |
 | `make dmg` | Pack the app into `build/SiliconReader-<version>.dmg` |
 | `make release VERSION=x.y.z` | Check, test and tag a release |
@@ -160,7 +162,8 @@ history), `-persist YES`, `-snapshotAfter N`.
 | [djvudec](https://github.com/kjk/djvudec) | `cfd3251` + [local patch](Vendor/djvudec/PATCHES.md) | MIT | vendored `djvu.c` / `djvu.h` |
 | Swift Testing | toolchain | Apache-2.0 | unit and e2e tests |
 
-Toolchain: Swift 6, macOS 14+ SDK, Apple Silicon.
+Toolchain: Swift 6 and the newest macOS SDK you have; the app targets macOS 14
+(`MIN_MACOS` in the Makefile, checked by `scripts/check-binary.sh`). Apple Silicon.
 
 ## 🗺️ Roadmap
 
