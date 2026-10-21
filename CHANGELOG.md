@@ -10,6 +10,27 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-21
+
+### Added
+
+- Find Previous / Find Next arrows next to the toolbar's search field; they search
+  for the field's text, so Return isn't needed first.
+
+### Fixed
+
+- Choosing a zoom level from the toolbar's drop-down list had no effect.
+- While the page, zoom or search box had the focus, the toolbar buttons that act on
+  the page (zoom out, fit, rotate) were disabled until you clicked the page.
+
+### Changed
+
+- Dark mode: the background around pages is the system's dark gray instead of
+  pure black.
+- New windows are 1100 points wide (was 1000), so the whole toolbar, search field
+  included, fits next to the sidebar.
+- New screenshots in the README.
+
 ## [1.0.1] - 2026-10-21
 
 ### Fixed

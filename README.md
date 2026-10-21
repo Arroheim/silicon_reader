@@ -28,7 +28,7 @@ the same engines Sumatra uses.
 - 📂 **Open Recent** and **drag and drop** — drop files on a window to open them as tabs
 - ⚙️ **Settings** — default layout and zoom, what to remember, session restore, auto reload
 - 🏠 **Home page** with "Frequently Read" thumbnails
-- 🔎 **Find** with highlights for every match, match case, ⌘G / ⇧⌘G
+- 🔎 **Find** with highlights for every match, match case, ⌘G / ⇧⌘G or the arrows next to the search field
 - ✂️ **Text selection and copy**, double/triple click, zoom to selection, clickable links
 - 💾 **Remembers everything** — page, zoom and layout per document, restores the session
 - 🔄 **Reloads automatically** when a file changes on disk (handy with LaTeX)

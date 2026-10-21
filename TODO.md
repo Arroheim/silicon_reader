@@ -70,6 +70,9 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] Released 1.0.0: https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.0
 - [x] Released 1.0.1 (Liquid Glass layout fix, tested on macOS 14 before publishing):
       https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.1
+- [x] Released 1.0.2 (toolbar zoom list, buttons disabled while a toolbar box had the
+      focus, Find Previous/Next arrows, dark-gray canvas):
+      https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.2
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
