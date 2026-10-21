@@ -200,18 +200,17 @@ extension DocumentView {
         let caseSensitive = matchCase
         onSearchStatus("Searching…")
         needsDisplay = true
+        // Made here, not inside the detached task: Swift 6.0 treats whatever that
+        // task's closures capture as task-isolated and won't send it to the main actor.
+        let reportProgress: @Sendable (Int) -> Void = { [weak self] page in
+            guard page % 10 == 0 else { return }
+            Task { @MainActor in self?.onSearchStatus("Searching page \(page + 1) of \(pageCount)…") }
+        }
         searchTask = Task { [weak self] in
             let match = await Task.detached(priority: .userInitiated) {
                 DocumentSearch.next(
                     query, caseSensitive: caseSensitive, after: start, forward: forward, pageCount: pageCount,
-                    text: store.text(_:),
-                    progress: { page in
-                        guard page % 10 == 0 else { return }
-                        // Capture the finished string: Swift 6.0 rejects sending `page` itself.
-                        let status = "Searching page \(page + 1) of \(pageCount)…"
-                        Task { @MainActor [status] in self?.onSearchStatus(status) }
-                    },
-                    isCancelled: { Task.isCancelled })
+                    text: store.text(_:), progress: reportProgress, isCancelled: { Task.isCancelled })
             }.value
             guard !Task.isCancelled, let self else { return }
             searchTask = nil
