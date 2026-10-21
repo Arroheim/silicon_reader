@@ -67,7 +67,7 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
       GitHub release (`make release VERSION=x.y.z`, then push the tag)
 - [x] GitHub repo: https://github.com/Arroheim/silicon_reader (public; first CI run green)
 - [x] CHANGELOG.md has its `[1.0.0]` section
-- [ ] `make release VERSION=1.0.0`, then `git push origin v1.0.0`
+- [x] Released 1.0.0: https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.0
 
 ### Library check
 
