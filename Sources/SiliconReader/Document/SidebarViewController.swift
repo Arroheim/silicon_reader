@@ -169,7 +169,7 @@ final class SidebarViewController: NSViewController {
     private func expand(_ node: SidebarNode) {
         guard node.isExpanded || node.isGroup else { return }
         outlineView.expandItem(node)
-        node.children.forEach(expand)
+        for child in node.children { expand(child) }
     }
 
     func focus() {

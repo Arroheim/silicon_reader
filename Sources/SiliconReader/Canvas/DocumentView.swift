@@ -630,7 +630,9 @@ final class DocumentView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
+        // A loop, not forEach(removeTrackingArea): Swift 6.0 (the macOS 14 CI
+        // toolchain) treats that method reference as throwing.
+        for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(
             NSTrackingArea(
                 rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
