@@ -10,6 +10,34 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-07
+
+### Added
+
+- PDF annotations: highlight (`A`), underline (`U`), strike-out (`X`), notes (`T`) and
+  freehand drawing (`D`), from the keyboard, the Annotate menu or a right click. Click
+  an annotation to pick it, then `E` edits its note and `⌦` or `⌫` deletes it; hovering
+  over a note shows its text. Annotations are ordinary PDF annotations, so other viewers
+  see them too.
+- Save Annotations (`⌥⌘S`) writes them into the open file; Save a Copy (`⌘S`) includes
+  them. Closing, quitting or reloading with unsaved annotations asks first, and a file
+  changed on disk no longer replaces them.
+
+### Changed
+
+- Selected text is the macOS selection blue instead of Sumatra's yellow, which couldn't
+  be seen over a highlight.
+
+### Fixed
+
+- A drag starting just beside the text, such as left of a line or between lines, moved
+  the page instead of selecting. It selects now, and the page moves when dragged from
+  further away.
+- Selecting text no longer moves the page while the pointer is away from the window's
+  edges. Holding a selection at an edge scrolls that way, without moving the mouse, and
+  the harder you pull, even against the edge of the screen, the faster it goes.
+- Text inside a link can be selected: a drag selects it, a click still follows the link.
+
 ## [1.0.4] - 2026-11-07
 
 Version 1.0.3 was tagged but never published: GitHub retired its macOS 14 runners

@@ -29,6 +29,7 @@ the same engines Sumatra uses.
 - ⚙️ **Settings** — default layout and zoom, what to remember, session restore, auto reload
 - 🏠 **Home page** with "Frequently Read" thumbnails
 - 🔎 **Find** with highlights for every match, match case, ⌘G / ⇧⌘G or the arrows next to the search field
+- 🖍️ **PDF annotations**: highlight, underline, strike-out, notes, freehand, saved into the file
 - ✂️ **Text selection and copy**, double/triple click, zoom to selection, clickable links
 - 💾 **Remembers everything** — page, zoom and layout per document, restores the session
 - 🔄 **Reloads automatically** when a file changes on disk (handy with LaTeX)
@@ -87,6 +88,10 @@ The most used shortcuts; press `?` in the app for all of them.
 | `⌘6` `⌘7` `⌘8`, `c` | Single / facing / book view, continuous on/off |
 | `[` `]` | Rotate |
 | `⌘F`, `⌘G` `⇧⌘G` | Find, next / previous match |
+| `a` `u` `x` | Highlight, underline, strike out the selection |
+| `t`, `d` | Add a note, draw |
+| `e`, `⌦` `⌫` | Edit the picked note, delete the picked annotation |
+| `⌥⌘S` | Save annotations into the file |
 | `⌘K` (or `>` `@` `#` `$` `%`) | Command palette (commands, tabs, recent, favorites, bookmarks) |
 | `⌘D` | Add to favorites |
 | `⌃⌘S` | Show / hide sidebar |
@@ -132,6 +137,7 @@ Tests/
 | `make test-swift60` | Unit and e2e tests built with Swift 6.0.3, the toolchain of the oldest-macos CI job (prints how to install it) |
 | `make e2e-prebuilt` / `make smoke-prebuilt` | The same against an existing `build/SiliconReader.app` (CI runs them on macOS 15) |
 | `make check-library DIR=…` | Open every PDF/DjVu under a folder, render sample pages (or all with `ALL_PAGES=1`), report failures |
+| `make qa-files` | Files for the manual checklist in `build/qa`: password-protected and truncated PDFs and more |
 | `make dmg` | Pack the app into `build/SiliconReader-<version>.dmg` |
 | `make release VERSION=x.y.z` | Check, test and tag a release |
 | `make run FILE=…` | Build and open a document |

@@ -22,7 +22,9 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 The checklist with results lives in [docs/MANUAL_QA.md](docs/MANUAL_QA.md); bugs it
 finds go here.
 
-- [ ] First full pass over `docs/MANUAL_QA.md`
+- [x] First full pass over `docs/MANUAL_QA.md` (before 1.1.0, Mac mini, macOS 27): no
+      failures
+- [ ] The trackpad checks: skipped, no trackpad on that Mac
 
 ### Release-blocking gaps
 
@@ -60,6 +62,8 @@ finds go here.
       https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.2
 - [x] Released 1.0.4 (single keys in menus, placeholder for broken pages; 1.0.3 was
       tagged but never published): https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.4
+- [x] Released 1.1.0 (PDF annotations, selection reworked):
+      https://github.com/Arroheim/silicon_reader/releases/tag/v1.1.0
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
@@ -98,7 +102,7 @@ expected value for everyday reading.
 
 | Feature | Sumatra | Notes |
 |---|---|---|
-| Annotations: highlight, underline, strike-out, notes, freehand | `a`/`u` keys, edit panel, save | MuPDF can create and save them (`pdf_*` annotation API) |
+| Annotations beyond the basics: colors, squiggly, moving and resizing, undo, a list in the sidebar | edit panel | highlight, underline, strike-out, notes, freehand and saving are done |
 | PDF forms: fill, save | partial | MuPDF widgets API |
 | SyncTeX forward/inverse search | yes | for LaTeX users; needs a CLI entry point and editor command setting |
 | Advanced settings | `SumatraPDF-settings.txt` | 1.0 has the essentials in Settings (⌘,) |
@@ -133,7 +137,10 @@ SumatraPDF's other engines: `EngineMupdf` (XPS, EPUB, FB2, MOBI, CBZ),
 ## Engineering
 
 - [ ] Split `DocumentView` (~900 lines): drawing/tiles, navigation, input
-- [ ] Bound memory: `TextStore` and link caches grow with every page visited
+- [ ] Bound memory: `TextStore` and link caches grow with every page visited; tiles
+      (384 MB) and MuPDF's store (256 MB) are limits per document, so memory grows with
+      open tabs (6 heavy documents: 2 GB). Use one budget for the app and let background
+      tabs give memory back. Measured before 1.1.0: no leak, the caches level off
 - [ ] Group debug flags (`-snapshot`, `-control`, `-actions`, …) into one `DebugOptions`
 - [ ] Accessibility: expose the text layer to VoiceOver
 - [ ] Rendering benchmarks (first page time, scroll throughput) tracked in CI
