@@ -19,24 +19,10 @@ gap list below).
 The control channel exercises commands and state, not the mouse, gestures or
 system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 
-- [ ] Mouse: drag-select across pages, hand-pan on empty areas, double/triple click
-- [ ] Links: click internal and external links in PDFs; cursor shapes over links/text
-- [ ] Trackpad: pinch zoom around the pointer, smart magnify, ⌘-scroll zoom
-- [ ] Wheel/trackpad flipping pages in non-continuous mode
-- [ ] Open dialog, Finder "Open With", drag a file onto the Dock icon
-- [ ] Tabs: open several files, drag tabs out/in, ⇧⌘[ / ⇧⌘], close the last tab → home
-- [ ] Password-protected PDF: prompt, wrong password, cancel
-- [ ] Print to a real printer and the print preview; landscape pages
-- [ ] Full screen and presentation mode (enter/leave animations, Esc, clicks)
-- [ ] Two displays with different scale factors; moving a window between them
-- [ ] Live switch between light and dark appearance
-- [ ] Large documents: 1000+ page PDF, heavy scanned DjVu — scroll speed, memory
-      (rendering itself is covered by `make check-library`, see below)
-- [ ] Corrupted / truncated files: no crash, a readable error
-- [ ] Tab switching with ⌘} / ⌘{ (e2e only checks the wiring: NSWindow enables
-      these actions only in the key window, which a background test run doesn't get)
-- [ ] Session restore with several windows and tabs (check the small scroll offset
-      seen after restoring two tabs in phase 1)
+The checklist with results lives in [docs/MANUAL_QA.md](docs/MANUAL_QA.md); bugs it
+finds go here.
+
+- [ ] First full pass over `docs/MANUAL_QA.md`
 
 ### Release-blocking gaps
 
@@ -47,9 +33,8 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] **Settings window** (⌘,): default zoom and layout, remember state per document,
       restore session, reload on change — stored in the library file
 - [x] **Page thumbnails** in the sidebar (⌥⌘2; bookmarks ⌥⌘3), following the current page
-- [ ] Single-key shortcuts visible in menus (today only in the `?` help and tooltips)
-- [ ] Manual check: drop a file from Finder on a window and on the Dock icon (e2e
-      drives the drop handler, not a real drag session)
+- [x] Printable single-key shortcuts visible in menus. Arrows, Home and F-keys stay
+      tooltips: as menu equivalents they'd be taken away from text fields
 
 ### Packaging
 
@@ -73,6 +58,8 @@ system dialogs. The home-page Open crash (fixed in 1.0) lived exactly there.
 - [x] Released 1.0.2 (toolbar zoom list, buttons disabled while a toolbar box had the
       focus, Find Previous/Next arrows, dark-gray canvas):
       https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.2
+- [x] Released 1.0.3 (single keys in menus, placeholder for broken pages):
+      https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.3
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
@@ -92,13 +79,13 @@ process per file, so a crash or hang is reported instead of stopping the run.
       djvudec bug below
 - [x] Fixed: djvudec truncated INCL component ids to 63 bytes, so pages sharing a JB2
       dictionary failed to render (`Vendor/djvudec/PATCHES.md`)
-- [ ] Regression fixture: a small DjVu whose INCL id is longer than 63 bytes
-- [ ] Report the INCL bug upstream to kjk/djvudec
+- [x] Regression fixture: `long-incl-id.djvu`, fails on both pages without the patch
+- [ ] Report the INCL bug upstream to kjk/djvudec (still there at f0412ee)
 - [x] Every page of the same library (`ALL_PAGES=1`): 514 088 pages, 0 crashes, 0 hangs;
       the one failure (page 35 of "Введение в теорию чисел", 1984.djvu) is corrupt JB2 data —
       DjVuLibre's `ddjvu` fails on it too
-- [ ] A page that fails to decode: show a readable placeholder in the canvas (check
-      what it looks like today), like Sumatra does
+- [x] A page that fails to decode shows "Couldn't display page N" in the canvas, like
+      Sumatra does; before it was blank, and e2e waited for it forever
 - [ ] Peak memory 749 MB while sweeping a whole book in one process — fine for a checker,
       but worth a look together with the `TextStore` cache bound below
 

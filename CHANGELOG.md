@@ -10,6 +10,19 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-07
+
+### Added
+
+- Menus show single-key shortcuts such as `N`, `R` and `?`, so they can be found
+  without the keyboard help. They still don't fire while typing in a text field.
+- A page that can't be decoded shows "Couldn't display page N" instead of staying
+  blank.
+
+### Changed
+
+- The manual test checklist moved to `docs/MANUAL_QA.md`.
+
 ## [1.0.2] - 2026-10-21
 
 ### Added

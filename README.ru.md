@@ -139,7 +139,8 @@ Tests/
 **End-to-end тесты** запускают настоящее приложение с `-control <сокет>` и общаются с ним JSON'ом
 через Unix-сокет: нажимают клавиши через настоящее меню и обработку клавиш, а проверяют
 сообщённое состояние (страница, масштаб, выделение, совпадение поиска, вкладки), а не пиксели.
-Протокол — в `Sources/ReaderCore/Control/ControlProtocol.swift`.
+Протокол — в `Sources/ReaderCore/Control/ControlProtocol.swift`. То, что им недоступно (мышь,
+жесты, системные диалоги, печать), — в чек-листе [docs/MANUAL_QA.md](docs/MANUAL_QA.md).
 
 **Отладочные флаги** для снимков и тестов: `-snapshot out.png`, `-actions a,b`, `-find текст`,
 `-palette текст`, `-printToPDF out.pdf`, `-library path.json` (тесты не трогают вашу историю),

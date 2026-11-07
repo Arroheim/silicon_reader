@@ -138,7 +138,8 @@ Tests/
 **End-to-end tests** start the real app with `-control <socket>` and talk JSON over a Unix
 socket: they press keys through the real menu bar and key handling, then assert on reported
 state (page, zoom, selection, search match, tabs) rather than on pixels. The protocol lives in
-`Sources/ReaderCore/Control/ControlProtocol.swift`.
+`Sources/ReaderCore/Control/ControlProtocol.swift`. What they can't drive (mouse, gestures,
+system dialogs, printing) is on the checklist in [docs/MANUAL_QA.md](docs/MANUAL_QA.md).
 
 **Debug flags** for snapshots and tests: `-snapshot out.png`, `-actions a,b`, `-find text`,
 `-palette text`, `-printToPDF out.pdf`, `-library path.json` (keeps tests away from your own
