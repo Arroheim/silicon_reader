@@ -111,4 +111,13 @@ public struct Shortcut: Hashable, Sendable {
     public var isMenuShortcut: Bool {
         !modifiers.isDisjoint(with: [.command, .control])
     }
+
+    /// A printable key a menu item may show as its key equivalent although the
+    /// canvas handles it: AppKit leaves these to the focused view, so typing in
+    /// a text field is safe. Arrows, Home, F-keys and the like don't qualify:
+    /// the menu would take them away from text fields.
+    public var isMenuHint: Bool {
+        guard case .character = key else { return false }
+        return !isMenuShortcut && !modifiers.contains(.option)
+    }
 }

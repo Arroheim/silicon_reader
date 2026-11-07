@@ -72,6 +72,18 @@ struct CommandTableTests {
         #expect(!Shortcut(.character("n")).isMenuShortcut)
         #expect(!Shortcut(.down, .shift).isMenuShortcut)
     }
+
+    /// As a menu equivalent an arrow or Home would stop working in the search field.
+    @Test("menus show printable single keys only")
+    func menuHints() {
+        #expect(Shortcut(.character("n")).isMenuHint)
+        #expect(Shortcut(.character("i"), .shift).isMenuHint)
+        #expect(Shortcut(.character("?")).isMenuHint)
+        #expect(!Shortcut(.character("n"), .command).isMenuHint, "already a real menu shortcut")
+        for key in [Key.home, .end, .up, .right, .pageDown, .space, .enter, .backspace, .function(6)] {
+            #expect(!Shortcut(key).isMenuHint, "\(key)")
+        }
+    }
 }
 
 @Suite("Shortcut")

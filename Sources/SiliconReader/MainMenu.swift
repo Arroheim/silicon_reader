@@ -82,16 +82,18 @@ enum MainMenu {
     }
 
     /// A visible item for the command's first ⌘/⌃ shortcut plus hidden items
-    /// for any other ⌘/⌃ alternates (e.g. ⌘= for ⌘+). Single-key shortcuts
-    /// are not menu equivalents; the canvas handles them.
+    /// for any other ⌘/⌃ alternates (e.g. ⌘= for ⌘+). Without a ⌘/⌃ shortcut
+    /// the item shows the printable single key (`Shortcut.isMenuHint`); the
+    /// canvas still handles that key.
     private static func items(for command: Command) -> [NSMenuItem] {
         let action = Selector("\(command.action):")
         let menuShortcuts = command.shortcuts.filter(\.isMenuShortcut).filter { $0.menuKeyEquivalent != nil }
         let item = NSMenuItem(title: command.title, action: action, keyEquivalent: "")
         if let primary = menuShortcuts.first {
             apply(primary, to: item)
+        } else if let hint = command.shortcuts.first(where: \.isMenuHint) {
+            apply(hint, to: item)
         } else if let single = command.shortcuts.first {
-            // Show the single-key shortcut as a hint without making it an equivalent.
             item.toolTip = "Shortcut: \(single.display)"
         }
         let alternates = menuShortcuts.dropFirst().map { shortcut -> NSMenuItem in
