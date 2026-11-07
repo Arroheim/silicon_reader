@@ -55,8 +55,9 @@
 xattr -dr com.apple.quarantine /Applications/SiliconReader.app
 ```
 
-Нужна macOS 14 или новее на Apple Silicon. Каждый релиз тестируется и на macOS 14, и на
-последней macOS.
+Нужна macOS 14 или новее на Apple Silicon. Каждый релиз собирается под macOS 14 и
+тестируется на macOS 15 и последней macOS: GitHub больше не даёт раннеры с macOS 14,
+поэтому начиная с 1.0.4 на самой macOS 14 релизы не запускались.
 
 ## 🚀 Быстрый старт (из исходников)
 
@@ -129,8 +130,8 @@ Tests/
 | `make lint` / `make format` | Проверка / переформатирование `swift format` |
 | `make app` | Release-сборка в `build/SiliconReader.app` |
 | `make smoke` | Открывает тестовые документы в нескольких режимах и сохраняет снимки окна |
-| `make test-swift60` | Unit и e2e тесты, собранные Swift 6.0.3 — тулчейном CI-задачи на macOS 14 (подскажет, как его поставить) |
-| `make e2e-prebuilt` / `make smoke-prebuilt` | То же против уже собранного `build/SiliconReader.app` (CI гоняет их на macOS 14) |
+| `make test-swift60` | Unit и e2e тесты, собранные Swift 6.0.3 — тулчейном CI-задачи oldest-macos (подскажет, как его поставить) |
+| `make e2e-prebuilt` / `make smoke-prebuilt` | То же против уже собранного `build/SiliconReader.app` (CI гоняет их на macOS 15) |
 | `make check-library DIR=…` | Открывает каждый PDF/DjVu в папке, рендерит выборочные страницы (или все с `ALL_PAGES=1`), выдаёт отчёт о сбоях |
 | `make dmg` | Упаковывает приложение в `build/SiliconReader-<версия>.dmg` |
 | `make release VERSION=x.y.z` | Проверяет, тестирует и ставит тег релиза |

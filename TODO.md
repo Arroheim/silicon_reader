@@ -58,15 +58,17 @@ finds go here.
 - [x] Released 1.0.2 (toolbar zoom list, buttons disabled while a toolbar box had the
       focus, Find Previous/Next arrows, dark-gray canvas):
       https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.2
-- [x] Released 1.0.3 (single keys in menus, placeholder for broken pages):
-      https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.3
+- [x] Released 1.0.4 (single keys in menus, placeholder for broken pages; 1.0.3 was
+      tagged but never published): https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.4
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
 - [x] Liquid Glass (SDK 26+ on macOS 26+): the canvas covered the title and slid under
       the floating toolbar. `UIDesignRequiresCompatibility` is ignored on macOS 27, so
       the canvas is laid out below the toolbar (e2e `canvasUnderToolbar`), 1.0.1
-- [x] The built app runs smoke + e2e on a `macos-14` runner in CI and before every release
+- [x] The built app runs smoke + e2e on the oldest GitHub runner (`macos-15`) in CI and
+      before every release. GitHub retired macOS 14 on 2026-11-02; the app still targets 14
+- [ ] Nothing runs on macOS 14 itself any more: a local VM (Tart) could bring that back
 - [x] Source artwork: only `icon-source-v1.png` is kept (v2, with the baked-in
       checkerboard, was the source of `Resources/AppIcon.png` and isn't needed any more)
 

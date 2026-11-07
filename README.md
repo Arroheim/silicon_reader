@@ -54,8 +54,9 @@ The app is not notarized by Apple yet, so macOS blocks the first launch. Either 
 xattr -dr com.apple.quarantine /Applications/SiliconReader.app
 ```
 
-Requires macOS 14 or later on Apple Silicon. Every release is tested on macOS 14 and
-on the latest macOS.
+Requires macOS 14 or later on Apple Silicon. Every release is built for macOS 14 and
+tested on macOS 15 and the latest macOS: GitHub no longer offers macOS 14 runners, so
+releases since 1.0.4 haven't been run on macOS 14 itself.
 
 ## 🚀 Quick Start (from source)
 
@@ -128,8 +129,8 @@ Tests/
 | `make lint` / `make format` | `swift format` check / rewrite |
 | `make app` | Release build wrapped into `build/SiliconReader.app` |
 | `make smoke` | Open sample documents in several view modes and save window snapshots |
-| `make test-swift60` | Unit and e2e tests built with Swift 6.0.3, the toolchain of the macOS 14 CI job (prints how to install it) |
-| `make e2e-prebuilt` / `make smoke-prebuilt` | The same against an existing `build/SiliconReader.app` (CI runs them on macOS 14) |
+| `make test-swift60` | Unit and e2e tests built with Swift 6.0.3, the toolchain of the oldest-macos CI job (prints how to install it) |
+| `make e2e-prebuilt` / `make smoke-prebuilt` | The same against an existing `build/SiliconReader.app` (CI runs them on macOS 15) |
 | `make check-library DIR=…` | Open every PDF/DjVu under a folder, render sample pages (or all with `ALL_PAGES=1`), report failures |
 | `make dmg` | Pack the app into `build/SiliconReader-<version>.dmg` |
 | `make release VERSION=x.y.z` | Check, test and tag a release |

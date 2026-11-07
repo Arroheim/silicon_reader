@@ -10,7 +10,10 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
-## [1.0.3] - 2026-11-07
+## [1.0.4] - 2026-11-07
+
+Version 1.0.3 was tagged but never published: GitHub retired its macOS 14 runners
+and the release stopped there. This release contains everything it had.
 
 ### Added
 
@@ -22,6 +25,8 @@ publishes the DMG with this section as the release notes.
 ### Changed
 
 - The manual test checklist moved to `docs/MANUAL_QA.md`.
+- CI and releases test the built app on macOS 15, the oldest macOS GitHub still
+  offers. The app still targets macOS 14, but isn't run on it before a release.
 
 ## [1.0.2] - 2026-10-21
 
