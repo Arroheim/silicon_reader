@@ -65,8 +65,8 @@ e2e: app e2e-prebuilt ## Run end-to-end tests against the built app over its con
 e2e-prebuilt: ## Run end-to-end tests against an existing build/SiliconReader.app
 	SILICON_READER_APP="$(abspath $(APP))" swift test $(SWIFT_FLAGS) $(TEST_FLAGS) --filter E2ETests
 
-# The oldest toolchain the code must build with: the macOS 14 CI job compiles the
-# package and its tests with Xcode 16.2 (Swift 6.0.3, macOS 15.2 SDK), which is
+# The oldest toolchain the code must build with: the oldest-macos CI job compiles
+# the package and its tests with Xcode 16.2 (Swift 6.0.3, macOS 15.2 SDK), which is
 # stricter about concurrency than current Swift. Install the swift.org toolchain
 # into your home directory (no sudo) to catch that before pushing.
 SWIFT60_TOOLCHAIN ?= $(HOME)/Library/Developer/Toolchains/swift-6.0.3-RELEASE.xctoolchain
@@ -75,7 +75,7 @@ SWIFT60_PKG_URL   := https://download.swift.org/swift-6.0.3-release/xcode/swift-
 SWIFT60           := SDKROOT="$(SWIFT60_SDK)" "$(SWIFT60_TOOLCHAIN)/usr/bin/swift"
 SWIFT60_FLAGS     := --sdk "$(SWIFT60_SDK)" --scratch-path $(BUILD_DIR)/swift60
 
-test-swift60: app ## Build and run unit + e2e tests with Swift 6.0.3, as the macOS 14 CI job does
+test-swift60: app ## Build and run unit + e2e tests with Swift 6.0.3, as the oldest-macos CI job does
 	@[[ -x "$(SWIFT60_TOOLCHAIN)/usr/bin/swift" ]] || { echo "error: no Swift 6.0.3 toolchain. Install it with:"; \
 		echo "  curl -fLO $(SWIFT60_PKG_URL)"; \
 		echo "  installer -pkg swift-6.0.3-RELEASE-osx.pkg -target CurrentUserHomeDirectory"; exit 1; }

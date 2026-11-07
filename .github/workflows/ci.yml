@@ -60,7 +60,7 @@ jobs:
 
       # A tarball keeps the executable bit and the signature, which a plain
       # artifact upload would not.
-      - name: Pack the app for the macOS 14 job
+      - name: Pack the app for the oldest-macos job
         run: tar -czf build/SiliconReader.app.tgz -C build SiliconReader.app
 
       - name: Upload the app
@@ -70,16 +70,17 @@ jobs:
           path: build/SiliconReader.app.tgz
 
   # The app above is linked against the runner's newest SDK; run that very
-  # binary on the oldest macOS it supports.
-  macos-14:
+  # binary on the oldest macOS GitHub still offers. The app supports macOS 14,
+  # but GitHub retired those images on 2026-11-02.
+  oldest-macos:
     needs: build
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # The image defaults to Xcode 15 (Swift 5.10); the tests need Swift 6.
+      # Xcode 16.2 is Swift 6.0.3, the oldest toolchain the code must build with.
       # Only the tests are built here: the app comes from the job above.
       - name: Toolchain
         run: |
@@ -104,22 +105,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/deps/mupdf
-          key: mupdf-macos14-${{ runner.arch }}-${{ steps.mupdf.outputs.rev }}-${{ hashFiles('Makefile') }}
+          key: mupdf-macos15-${{ runner.arch }}-${{ steps.mupdf.outputs.rev }}-${{ hashFiles('Makefile') }}
 
       # The e2e tests link ReaderCore, which needs MuPDF.
       - name: Build MuPDF
         run: make deps
 
-      - name: Smoke test on macOS 14
+      - name: Smoke test on the oldest macOS
         run: make smoke-prebuilt
 
-      - name: End-to-end tests on macOS 14
+      - name: End-to-end tests on the oldest macOS
         run: make e2e-prebuilt
 
-      - name: Upload macOS 14 snapshots
+      - name: Upload the oldest macOS snapshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-snapshots-macos14
+          name: smoke-snapshots-oldest-macos
           path: build/smoke/
           if-no-files-found: ignore
