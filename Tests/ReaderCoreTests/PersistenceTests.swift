@@ -155,6 +155,29 @@ struct FileWatcherTests {
         }
     }
 
+    /// Regression: Spotlight, Finder tags and the like touch only metadata. Reloading
+    /// for them threw away presentation mode, inverted colors and the like.
+    @Test("metadata changes aren't changes to the file")
+    func metadataOnly() async throws {
+        let url = try makeFile()
+        let counter = Counter()
+        let watcher = watch(url, counter)
+        try await Task.sleep(for: .milliseconds(100))
+
+        let value = Data("1".utf8)
+        let status = value.withUnsafeBytes { setxattr(url.path, "test.silicon-reader", $0.baseAddress, $0.count, 0, 0) }
+        #expect(status == 0)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(counter.count == 0)
+
+        // And the watcher still works after them.
+        try Data("v2".utf8).write(to: url)
+        #expect(await eventually { counter.count == 1 })
+        watcher.stop()
+    }
+
     @Test("reports an in-place write once, debounced")
     func inPlaceWrite() async throws {
         let url = try makeFile()
