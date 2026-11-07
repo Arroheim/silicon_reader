@@ -20,4 +20,7 @@ using it could not be decoded. Found by `make check-library` on a real library:
 **Fix:** the three `char id[64]` buffers that hold INCL ids are 1024 bytes
 (marked `silicon-reader patch 0001` in `djvu.c`).
 
-**Upstream:** not reported yet.
+**Test:** `long-incl-id.djvu` (`scripts/make-djvu-fixtures.sh`) fails on both pages
+without this patch.
+
+**Upstream:** not reported yet; still present at `f0412ee` (2026-11-05).

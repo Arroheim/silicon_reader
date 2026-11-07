@@ -41,6 +41,24 @@ struct DjVuEngineTests {
         #expect(DjVuEngine.subsample(dpi: dpi, scale: scale) == expected)
     }
 
+    /// Regression: djvudec cut INCL ids to 63 bytes, so the shared JB2 dictionary
+    /// wasn't found (`Vendor/djvudec/PATCHES.md`, 0001).
+    @Test("renders pages whose shared dictionary has a long INCL id", arguments: [0, 1])
+    func longIncludeID(page: Int) throws {
+        let engine = try DjVuEngine(url: try Fixtures.url("long-incl-id.djvu"))
+
+        #expect(engine.pageCount == 2)
+        #expect(try engine.render(page: page, scale: 0.5).width > 0)
+    }
+
+    @Test("a page that can't be decoded fails alone")
+    func brokenPage() throws {
+        let engine = try DjVuEngine(url: try Fixtures.url("broken-page.djvu"))
+
+        #expect(try engine.render(page: 0, scale: 0.5).width > 0)
+        #expect(throws: EngineError.self) { try engine.render(page: 1, scale: 0.5) }
+    }
+
     @Test("fails to open a corrupt file")
     func corruptFile() throws {
         let url = try Fixtures.temporaryFile("broken.djvu", contents: Data("AT&TFORMgarbage".utf8))

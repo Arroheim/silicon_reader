@@ -194,6 +194,8 @@ enum Documents {
     static let spec = fixtures.appendingPathComponent("djvu2spec.djvu")
     /// 2 pages; the next file after djvu2spec in the fixtures folder.
     static let lizard = fixtures.appendingPathComponent("lizard2002.djvu")
+    /// 2 pages; the second can't be decoded.
+    static let brokenPage = fixtures.appendingPathComponent("broken-page.djvu")
     /// 60-page PDF from the MuPDF submodule (`make deps`).
     static let pdf = root.appendingPathComponent("Vendor/mupdf/thirdparty/lcms2/doc/LittleCMS2.19 tutorial.pdf")
 }

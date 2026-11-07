@@ -54,7 +54,7 @@ final class TileRenderer {
     private var running: Set<TileKey> = []
     private var failed: Set<TileKey> = []
 
-    /// Called on the main actor when a tile becomes available.
+    /// Called on the main actor when a tile becomes available or fails to render.
     var onTileReady: ((TileKey) -> Void)?
 
     init(engine: any DocumentEngine, maxConcurrent: Int = 2, memoryBudget: Int = 384 << 20) {
@@ -105,6 +105,17 @@ final class TileRenderer {
 
     var failedCount: Int { failed.count }
 
+    /// Pages with a tile the engine couldn't render, ascending.
+    var failedPages: [Int] { Set(failed.map(\.page)).sorted() }
+
+    func hasFailed(_ key: TileKey) -> Bool {
+        failed.contains(key)
+    }
+
+    func hasFailed(page: Int) -> Bool {
+        failed.contains { $0.page == page }
+    }
+
     private func finish(_ key: TileKey, result: Result<CGImage, any Error>) {
         running.remove(key)
         switch result {
@@ -121,6 +132,7 @@ final class TileRenderer {
                 "render failed: page \(key.page) scale \(key.scale) tile \(tile): \(String(describing: error), privacy: .public)"
             )
             failed.insert(key)
+            onTileReady?(key)
         }
         pump()
     }

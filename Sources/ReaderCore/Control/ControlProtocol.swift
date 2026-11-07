@@ -140,6 +140,8 @@ public struct ControlState: Codable, Sendable, Equatable {
     /// Whether the canvas reaches into the title bar or toolbar (it must not:
     /// with Liquid Glass the pages would cover the title).
     public var canvasUnderToolbar: Bool
+    /// 0-based pages the engine couldn't render; they show a placeholder.
+    public var failedPages: [Int]
     public var invertsColors: Bool
     public var subtitle: String
     /// Document paths of all tabs and windows, front window's tabs first.
@@ -154,10 +156,11 @@ public struct ControlState: Codable, Sendable, Equatable {
         document: String?, pageCount: Int, page: Int, zoom: Zoom?, zoomPercent: Double, mode: ViewMode?,
         rotation: Int, selectedText: String, searchQuery: String?, match: Match?, sidebarVisible: Bool,
         sidebarMode: String? = nil, thumbnailPage: Int? = nil, panels: [String] = [], presenting: Bool,
-        canvasUnderToolbar: Bool = false, invertsColors: Bool, subtitle: String, openDocuments: [String],
-        frontTabs: [String] = [], windowCount: Int = 1, settled: Bool
+        canvasUnderToolbar: Bool = false, failedPages: [Int] = [], invertsColors: Bool, subtitle: String,
+        openDocuments: [String], frontTabs: [String] = [], windowCount: Int = 1, settled: Bool
     ) {
         self.canvasUnderToolbar = canvasUnderToolbar
+        self.failedPages = failedPages
         self.sidebarMode = sidebarMode
         self.thumbnailPage = thumbnailPage
         self.panels = panels

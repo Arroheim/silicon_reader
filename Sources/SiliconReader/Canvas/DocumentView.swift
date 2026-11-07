@@ -20,6 +20,9 @@ final class DocumentView: NSView {
     private static let previewPixels: CGFloat = 768
     private static let lineScroll: CGFloat = 40
 
+    /// Pages that failed to render (the control channel reports them).
+    var failedPages: [Int] { renderer.failedPages }
+
     let engine: any DocumentEngine
     private let pageSizes: [CGSize]
     private var contentBoxes: [CGRect?]
@@ -469,6 +472,8 @@ final class DocumentView: NSView {
             if !complete {
                 if let fallback = renderer.image(for: previewKey) ?? renderer.anyWholePageImage(for: page) {
                     drawPageImage(fallback, pageRect: CGRect(origin: .zero, size: pageSize), geometry: geo, in: ctx)
+                } else if renderer.hasFailed(page: page) {
+                    drawFailedPage(page, in: frame)
                 }
             }
             for case (let key, let image?) in ready {
@@ -510,7 +515,7 @@ final class DocumentView: NSView {
         }
     }
 
-    /// Tiles the current viewport needs that aren't rendered yet.
+    /// Tiles the current viewport still waits for; a failed tile won't arrive.
     private var missingVisibleTiles: [TileKey] {
         let deviceScale = window?.backingScaleFactor ?? 2
         return layout.pageFrames.indices.flatMap { page -> [TileKey] in
@@ -518,7 +523,7 @@ final class DocumentView: NSView {
                 return []
             }
             return tiles(forPage: page, geometry: geo, visible: viewport, deviceScale: deviceScale)
-                .filter { !renderer.hasImage(for: $0) }
+                .filter { !renderer.hasImage(for: $0) && !renderer.hasFailed($0) }
         }
     }
 
@@ -537,6 +542,19 @@ final class DocumentView: NSView {
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(origin: .zero, size: pageRect.size))
         ctx.restoreGState()
+    }
+
+    /// Stands in for a page the engine can't decode, like Sumatra's "Error
+    /// loading page". Drawn upright whatever the rotation; pages are white in
+    /// either appearance, so the color is fixed.
+    private func drawFailedPage(_ page: Int, in frame: CGRect) {
+        let text = "Couldn’t display page \(page + 1)" as NSString
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor(white: 0.4, alpha: 1),
+        ]
+        let size = text.size(withAttributes: attributes)
+        text.draw(
+            at: CGPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2), withAttributes: attributes)
     }
 
     private func tileReady(_ key: TileKey) {

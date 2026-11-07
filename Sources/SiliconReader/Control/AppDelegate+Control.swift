@@ -221,6 +221,7 @@ extension AppDelegate {
             panels: panels,
             presenting: canvas?.isPresenting ?? false,
             canvasUnderToolbar: controller.currentDocument?.canvasUnderToolbar ?? false,
+            failedPages: canvas?.failedPages ?? [],
             invertsColors: canvas?.invertsColors ?? false,
             subtitle: controller.window?.subtitle ?? "",
             openDocuments: documents,

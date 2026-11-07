@@ -134,6 +134,32 @@ struct ReaderE2ETests {
         #expect(try !app.waitUntilSettled().canvasUnderToolbar, "after leaving presentation")
     }
 
+    @Test("a page that can't be decoded shows a placeholder and the document stays usable")
+    func brokenPage() throws {
+        let app = try AppSession(documents: [Documents.brokenPage])
+        defer { try? app.quit() }
+
+        #expect(try app.waitUntilSettled().document == Documents.brokenPage.path)
+        #expect(try app.press("n").page == 1)
+        #expect(try app.waitUntilSettled().failedPages == [1], "settles instead of retrying forever")
+        #expect(try app.press("p").page == 0, "still navigable")
+    }
+
+    @Test("menus show printable single-key shortcuts, but not keys text fields need")
+    func singleKeysInMenus() throws {
+        let app = try AppSession(documents: [Documents.spec])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+
+        for (key, action) in [("n", "goToNextPage:"), ("r", "reloadDocument:"), ("?", "showKeyboardHelp:")] {
+            #expect(try app.send(ControlRequest(.resolve, chars: key)).target == action, "\(key)")
+        }
+        for key in ["home", "end", "space"] {
+            #expect(try app.send(ControlRequest(.resolve, chars: key)).target == "none", "\(key)")
+        }
+        #expect(try app.press("n").page == 1, "the canvas still handles the key, once")
+    }
+
     @Test("unbound keys are reported as not handled")
     func unboundKey() throws {
         let app = try AppSession(documents: [Documents.spec])
