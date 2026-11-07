@@ -133,6 +133,9 @@ final class DocumentViewController: NSSplitViewController {
     /// into the title bar or toolbar.
     var canvasUnderToolbar: Bool {
         guard let window = view.window else { return false }
+        // The toolbar coming back changes the window's rect at once and the canvas
+        // only in the next layout pass; what counts is the result of that pass.
+        window.contentView?.layoutSubtreeIfNeeded()
         let frame = canvasScroll.convert(canvasScroll.bounds, to: nil)
         return frame.maxY > window.contentLayoutRect.maxY + 0.5
     }
