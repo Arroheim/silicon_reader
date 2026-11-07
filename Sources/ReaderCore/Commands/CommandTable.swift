@@ -10,6 +10,7 @@ public struct Command: Hashable, Sendable {
         case edit = "Edit"
         case view = "View"
         case go = "Go"
+        case annotate = "Annotate"
         case favorites = "Favorites"
         case window = "Window"
         case help = "Help"
@@ -177,6 +178,18 @@ public enum CommandTable {
         Command(
             "CmdScrollUpPage", "Scroll Up a Screen", .go, action: "scrollScreenUp",
             [key(.pageUp), key(.space, .shift), key(.enter, .shift), key(.up, .option)], hiddenFromMenu: true),
+
+        // Annotate. A and U are Sumatra's keys; the others are free letters here.
+        Command("CmdCreateAnnotHighlight", "Highlight", .annotate, action: "annotateHighlight", [key("a")]),
+        Command("CmdCreateAnnotUnderline", "Underline", .annotate, action: "annotateUnderline", [key("u")]),
+        Command("CmdCreateAnnotStrikeOut", "Strike Out", .annotate, action: "annotateStrikeOut", [key("x")]),
+        Command("CmdCreateAnnotText", "Add Note…", .annotate, action: "annotateNote", [key("t")]),
+        Command("CmdCreateAnnotInk", "Draw", .annotate, action: "toggleDrawing", [key("d")]),
+        Command("CmdEditAnnotation", "Edit Note…", .annotate, action: "editAnnotation", [key("e")]),
+        // Backspace deletes too while an annotation is selected (see DocumentView.handleKey).
+        Command("CmdDeleteAnnotation", "Delete Annotation", .annotate, action: "deleteAnnotation", [key(.delete)]),
+        // ⌘S is Sumatra's Save As, kept as Save a Copy.
+        Command("CmdSaveAnnotations", "Save Annotations", .annotate, action: "saveAnnotations", [key("s", optCmd)]),
 
         // Favorites
         Command("CmdFavoriteAdd", "Add to Favorites…", .favorites, action: "addFavorite", [key("d", cmd)]),

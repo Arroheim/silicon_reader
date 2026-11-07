@@ -209,6 +209,110 @@ struct ReaderE2ETests {
         #expect(try app.waitUntilSettled().match == first, "back to the first match")
     }
 
+    @Test("a drag starting just off the text selects it, one far from the text moves the page")
+    func dragNearText() throws {
+        let app = try AppSession(documents: [Documents.spec])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+        // Fit Width makes the page taller than the window, so it can move.
+        #expect(try app.press("2", "cmd").zoom == .fitWidth)
+        try app.waitUntilSettled()
+        try app.press("down")
+        // Starts a line: only the page margin is to its left.
+        try app.send(ControlRequest(.find, text: "This document"))
+        let word = try #require(try app.waitUntilSettled().match?.rect)
+        try app.press("escape")
+        let offset = try app.waitUntilSettled().scrollOffset
+        #expect(offset > 0)
+
+        func drag(from: CGPoint, to: CGPoint) throws {
+            let steps = [("down", from), ("drag", to), ("up", to)]
+            for (name, point) in steps {
+                try app.send(
+                    ControlRequest(.mouse, name: name, page: 0, start: Int(point.x), end: Int(point.y)))
+            }
+        }
+
+        // Left of the first letter, where a selection naturally starts.
+        try drag(
+            from: CGPoint(x: word.minX - 6, y: word.midY), to: CGPoint(x: word.maxX + 30, y: word.midY + 30))
+        let selected = try app.state()
+        #expect(!selected.selectedText.isEmpty)
+        #expect(selected.scrollOffset == offset, "the page stays put while selecting")
+        try app.press("escape")
+
+        try drag(from: CGPoint(x: 5, y: word.midY), to: CGPoint(x: 5, y: word.midY + 30))
+        let panned = try app.state()
+        #expect(panned.selectedText.isEmpty)
+        #expect(panned.scrollOffset != offset, "the margin still moves the page")
+    }
+
+    @Test("a drag starting on a link selects its text, a click still follows it")
+    func dragOnLink() throws {
+        let app = try AppSession(documents: [Documents.pdf])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+        // Every line of the table of contents on page 2 is a link.
+        #expect(try app.press("n").page == 1)
+        try app.waitUntilSettled()
+        try app.send(ControlRequest(.find, text: "Documentation"))
+        let word = try #require(try app.waitUntilSettled().match?.rect)
+        try app.press("escape")
+
+        func mouse(_ name: String, x: CGFloat, y: CGFloat) throws {
+            try app.send(ControlRequest(.mouse, name: name, page: 1, start: Int(x), end: Int(y)))
+        }
+        try mouse("down", x: word.minX + 2, y: word.midY)
+        try mouse("drag", x: word.maxX - 2, y: word.midY)
+        try mouse("up", x: word.maxX - 2, y: word.midY)
+        let selected = try app.state()
+        #expect(!selected.selectedText.isEmpty)
+        #expect(selected.page == 1, "the link wasn't followed")
+        try app.press("escape")
+
+        try mouse("down", x: word.midX, y: word.midY)
+        try mouse("up", x: word.midX, y: word.midY)
+        #expect(try app.waitUntilSettled().page != 1, "a click follows the link")
+    }
+
+    @Test("a selection held at the bottom edge keeps scrolling until the button is released")
+    func dragPastEdge() throws {
+        let app = try AppSession(documents: [Documents.spec])
+        defer { try? app.quit() }
+        try app.waitUntilSettled()
+        #expect(try app.press("2", "cmd").zoom == .fitWidth)
+        try app.waitUntilSettled()
+        try app.send(ControlRequest(.find, text: "This document"))
+        let word = try #require(try app.waitUntilSettled().match?.rect)
+        try app.press("escape")
+        let offset = try app.waitUntilSettled().scrollOffset
+
+        func mouse(_ name: String, x: CGFloat, y: CGFloat) throws {
+            try app.send(ControlRequest(.mouse, name: name, page: 0, start: Int(x), end: Int(y)))
+        }
+        try mouse("down", x: word.minX, y: word.midY)
+        try mouse("drag", x: word.maxX, y: word.midY + 20)
+        #expect(try app.state().scrollOffset == offset)
+
+        // Fit Width on a Letter page: its bottom is below the window. One event, then
+        // the pointer stays put: scrolling must go on without more of them.
+        try mouse("drag", x: word.maxX, y: 780)
+        let held = try app.state()
+        let deadline = Date().addingTimeInterval(3)
+        while try app.state().scrollOffset < held.scrollOffset + 100, Date() < deadline {
+            usleep(20_000)
+        }
+        let scrolled = try app.state()
+        #expect(scrolled.scrollOffset >= held.scrollOffset + 100)
+        #expect(scrolled.selectedText.count >= held.selectedText.count, "the selection follows")
+        #expect(!scrolled.selectedText.isEmpty)
+
+        try mouse("up", x: word.maxX, y: 780)
+        let released = try app.state().scrollOffset
+        usleep(200_000)
+        #expect(try app.state().scrollOffset == released, "stops with the button")
+    }
+
     @Test("reports when nothing matches")
     func findNothing() throws {
         let app = try AppSession(documents: [Documents.spec])

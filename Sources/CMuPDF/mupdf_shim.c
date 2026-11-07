@@ -3,6 +3,7 @@
 #include <dispatch/dispatch.h>
 #include <math.h>
 #include <mupdf/fitz.h>
+#include <mupdf/pdf.h>
 #include <os/log.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -25,6 +26,7 @@ struct sr_doc {
     pthread_mutex_t lock;
     list_slot lists[SR_LIST_CACHE_SIZE];
     unsigned long long tick;
+    int unsaved;
 };
 
 /* Returns a cached display list for page (owned by the cache). Must be called
@@ -547,4 +549,296 @@ void sr_text_free(sr_text *text) {
     }
     free(text->chars);
     free(text);
+}
+
+/* ----- annotations ----- */
+
+/* Must be called with the lock held, inside fz_try. Throws for anything but PDF. */
+static pdf_page *load_pdf_page(sr_doc *d, int page) {
+    pdf_document *pdf = pdf_specifics(d->ctx, d->doc);
+    if (pdf == NULL) {
+        fz_throw(d->ctx, FZ_ERROR_ARGUMENT, "not a PDF document");
+    }
+    return pdf_load_page(d->ctx, pdf, page);
+}
+
+/* Rebuilds appearance streams and forgets the parsed page, so the next render shows the edit. */
+static void page_edited(sr_doc *d, pdf_page *p, int page) {
+    pdf_update_page(d->ctx, p);
+    for (int i = 0; i < SR_LIST_CACHE_SIZE; i++) {
+        list_slot *slot = &d->lists[i];
+        if (slot->list && slot->page == page) {
+            fz_drop_display_list(d->ctx, slot->list);
+            *slot = (list_slot){0};
+        }
+    }
+    d->unsaved = 1;
+}
+
+static pdf_annot *annot_at(fz_context *ctx, pdf_page *p, int index) {
+    pdf_annot *annot = pdf_first_annot(ctx, p);
+    while (annot && index-- > 0) {
+        annot = pdf_next_annot(ctx, annot);
+    }
+    if (annot == NULL) {
+        fz_throw(ctx, FZ_ERROR_ARGUMENT, "no such annotation");
+    }
+    return annot;
+}
+
+static int annot_index(fz_context *ctx, pdf_page *p, pdf_annot *wanted) {
+    int index = 0;
+    for (pdf_annot *a = pdf_first_annot(ctx, p); a; a = pdf_next_annot(ctx, a), index++) {
+        if (a == wanted) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+static sr_annot_kind annot_kind(enum pdf_annot_type type) {
+    switch (type) {
+        case PDF_ANNOT_HIGHLIGHT: return SR_ANNOT_HIGHLIGHT;
+        case PDF_ANNOT_UNDERLINE: return SR_ANNOT_UNDERLINE;
+        case PDF_ANNOT_STRIKE_OUT: return SR_ANNOT_STRIKEOUT;
+        case PDF_ANNOT_TEXT: return SR_ANNOT_NOTE;
+        case PDF_ANNOT_INK: return SR_ANNOT_INK;
+        default: return SR_ANNOT_OTHER;
+    }
+}
+
+int sr_doc_supports_annotations(sr_doc *d) {
+    int supported = 0;
+    pthread_mutex_lock(&d->lock);
+    fz_try(d->ctx) {
+        supported = pdf_specifics(d->ctx, d->doc) != NULL;
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+    }
+    pthread_mutex_unlock(&d->lock);
+    return supported;
+}
+
+int sr_doc_has_unsaved_changes(sr_doc *d) {
+    pthread_mutex_lock(&d->lock);
+    int unsaved = d->unsaved;
+    pthread_mutex_unlock(&d->lock);
+    return unsaved;
+}
+
+sr_annots *sr_doc_page_annots(sr_doc *d, int page) {
+    sr_annots *result = NULL;
+    pdf_page *p = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(p);
+    fz_var(result);
+    fz_try(d->ctx) {
+        p = load_pdf_page(d, page);
+        int total = 0;
+        for (pdf_annot *a = pdf_first_annot(d->ctx, p); a; a = pdf_next_annot(d->ctx, a)) {
+            total++;
+        }
+        result = calloc(1, sizeof(*result));
+        result->items = calloc((size_t)total + 1, sizeof(sr_annot));
+
+        int index = 0;
+        for (pdf_annot *a = pdf_first_annot(d->ctx, p); a; a = pdf_next_annot(d->ctx, a), index++) {
+            enum pdf_annot_type type = pdf_annot_type(d->ctx, a);
+            if (type == PDF_ANNOT_LINK || type == PDF_ANNOT_POPUP || type == PDF_ANNOT_WIDGET) {
+                continue;
+            }
+            const char *contents = pdf_annot_contents(d->ctx, a);
+            result->items[result->count++] = (sr_annot){
+                .index = index,
+                .kind = annot_kind(type),
+                .rect = to_rect(pdf_bound_annot(d->ctx, a)),
+                .contents = contents && contents[0] ? strdup(contents) : NULL,
+            };
+        }
+    }
+    fz_always(d->ctx) {
+        fz_drop_page(d->ctx, (fz_page *)p);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        sr_annots_free(result);
+        result = NULL;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return result;
+}
+
+void sr_annots_free(sr_annots *annots) {
+    if (annots == NULL) {
+        return;
+    }
+    for (int i = 0; i < annots->count; i++) {
+        free(annots->items[i].contents);
+    }
+    free(annots->items);
+    free(annots);
+}
+
+int sr_doc_add_markup(sr_doc *d, int page, sr_annot_kind kind, const sr_rect *rects, int count) {
+    enum pdf_annot_type type = kind == SR_ANNOT_HIGHLIGHT   ? PDF_ANNOT_HIGHLIGHT
+                               : kind == SR_ANNOT_UNDERLINE ? PDF_ANNOT_UNDERLINE
+                                                            : PDF_ANNOT_STRIKE_OUT;
+    int index = -1;
+    pdf_page *p = NULL;
+    pdf_annot *annot = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(p);
+    fz_var(annot);
+    fz_var(index);
+    fz_try(d->ctx) {
+        p = load_pdf_page(d, page);
+        annot = pdf_create_annot(d->ctx, p, type);
+        for (int i = 0; i < count; i++) {
+            fz_rect r = fz_make_rect(rects[i].x0, rects[i].y0, rects[i].x1, rects[i].y1);
+            pdf_add_annot_quad_point(d->ctx, annot, fz_quad_from_rect(r));
+        }
+        page_edited(d, p, page);
+        index = annot_index(d->ctx, p, annot);
+    }
+    fz_always(d->ctx) {
+        pdf_drop_annot(d->ctx, annot);
+        fz_drop_page(d->ctx, (fz_page *)p);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        index = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return index;
+}
+
+int sr_doc_add_note(sr_doc *d, int page, sr_point at, const char *text) {
+    int index = -1;
+    pdf_page *p = NULL;
+    pdf_annot *annot = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(p);
+    fz_var(annot);
+    fz_var(index);
+    fz_try(d->ctx) {
+        p = load_pdf_page(d, page);
+        annot = pdf_create_annot(d->ctx, p, PDF_ANNOT_TEXT);
+        pdf_set_annot_rect(d->ctx, annot, fz_make_rect(at.x, at.y, at.x + 20, at.y + 20));
+        pdf_set_annot_contents(d->ctx, annot, text);
+        page_edited(d, p, page);
+        index = annot_index(d->ctx, p, annot);
+    }
+    fz_always(d->ctx) {
+        pdf_drop_annot(d->ctx, annot);
+        fz_drop_page(d->ctx, (fz_page *)p);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        index = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return index;
+}
+
+int sr_doc_add_ink(sr_doc *d, int page, const sr_point *points, const int *lengths, int strokes) {
+    int index = -1;
+    pdf_page *p = NULL;
+    pdf_annot *annot = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(p);
+    fz_var(annot);
+    fz_var(index);
+    fz_try(d->ctx) {
+        p = load_pdf_page(d, page);
+        annot = pdf_create_annot(d->ctx, p, PDF_ANNOT_INK);
+        pdf_set_annot_border_width(d->ctx, annot, 2);
+        const sr_point *stroke = points;
+        for (int i = 0; i < strokes; i++) {
+            pdf_add_annot_ink_list_stroke(d->ctx, annot);
+            for (int j = 0; j < lengths[i]; j++) {
+                pdf_add_annot_ink_list_stroke_vertex(d->ctx, annot, fz_make_point(stroke[j].x, stroke[j].y));
+            }
+            stroke += lengths[i];
+        }
+        page_edited(d, p, page);
+        index = annot_index(d->ctx, p, annot);
+    }
+    fz_always(d->ctx) {
+        pdf_drop_annot(d->ctx, annot);
+        fz_drop_page(d->ctx, (fz_page *)p);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        index = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return index;
+}
+
+int sr_doc_set_annot_contents(sr_doc *d, int page, int index, const char *text) {
+    int rc = 0;
+    pdf_page *p = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(p);
+    fz_var(rc);
+    fz_try(d->ctx) {
+        p = load_pdf_page(d, page);
+        pdf_set_annot_contents(d->ctx, annot_at(d->ctx, p, index), text);
+        page_edited(d, p, page);
+    }
+    fz_always(d->ctx) {
+        fz_drop_page(d->ctx, (fz_page *)p);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        rc = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return rc;
+}
+
+int sr_doc_delete_annot(sr_doc *d, int page, int index) {
+    int rc = 0;
+    pdf_page *p = NULL;
+    pthread_mutex_lock(&d->lock);
+    fz_var(p);
+    fz_var(rc);
+    fz_try(d->ctx) {
+        p = load_pdf_page(d, page);
+        pdf_delete_annot(d->ctx, p, annot_at(d->ctx, p, index));
+        page_edited(d, p, page);
+    }
+    fz_always(d->ctx) {
+        fz_drop_page(d->ctx, (fz_page *)p);
+    }
+    fz_catch(d->ctx) {
+        fz_report_error(d->ctx);
+        rc = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return rc;
+}
+
+int sr_doc_save(sr_doc *d, const char *path, int saved_over_self, char *err, size_t errlen) {
+    int rc = 0;
+    pthread_mutex_lock(&d->lock);
+    fz_var(rc);
+    fz_try(d->ctx) {
+        pdf_document *pdf = pdf_specifics(d->ctx, d->doc);
+        if (pdf == NULL) {
+            fz_throw(d->ctx, FZ_ERROR_ARGUMENT, "not a PDF document");
+        }
+        pdf_save_document(d->ctx, pdf, path, &pdf_default_write_options);
+        if (saved_over_self) {
+            d->unsaved = 0;
+        }
+    }
+    fz_catch(d->ctx) {
+        copy_error(d->ctx, err, errlen);
+        fz_report_error(d->ctx);
+        rc = -1;
+    }
+    pthread_mutex_unlock(&d->lock);
+    return rc;
 }

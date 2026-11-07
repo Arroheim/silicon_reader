@@ -26,7 +26,7 @@ final class DocumentView: NSView {
     let engine: any DocumentEngine
     private let pageSizes: [CGSize]
     private var contentBoxes: [CGRect?]
-    private let renderer: TileRenderer
+    let renderer: TileRenderer
 
     private(set) var mode = ViewMode()
     private(set) var zoom: Zoom = .fitPage
@@ -56,6 +56,21 @@ final class DocumentView: NSView {
     var currentMatch: TextMatch?
     var searchTask: Task<Void, Never>?
     var linkCache: [Int: [PageLink]] = [:]
+    var annotationCache: [Int: [PageAnnotation]] = [:]
+    /// The annotation picked by a click; Delete and Edit act on it.
+    var selectedAnnotation: AnnotationReference?
+    /// Draw mode: dragging on a page adds a freehand stroke.
+    var isDrawing = false
+    /// The stroke being drawn, in page space.
+    var currentStroke: [CGPoint] = []
+    /// Where a selection drag's pointer is, in window coordinates: scrolling moves
+    /// the page under it without a mouse event.
+    var selectionPointer = CGPoint.zero
+    /// How hard the drag pulls past an edge the pointer can't cross (`EdgeScroll`).
+    var selectionPull = CGPoint.zero
+    var edgeScrollTask: Task<Void, Never>?
+    /// Where the pointer last was over a page, or the context menu opened; Add Note goes there.
+    var notePlace: (page: Int, point: CGPoint)?
     var drag = DragState.none
     /// Search progress and results for the window ("Searching page 5 of 39…").
     var onSearchStatus: (String?) -> Void = { _ in }
@@ -67,6 +82,8 @@ final class DocumentView: NSView {
         case panning(start: CGPoint, origin: CGPoint)
         /// Mouse went down on a link; follows it unless the mouse moves.
         case link(PageLink, start: CGPoint)
+        /// Adding to `currentStroke` on `page`.
+        case drawing(page: Int)
     }
 
     /// Called after the current page, zoom or layout mode changes.
@@ -480,6 +497,7 @@ final class DocumentView: NSView {
                 drawPageImage(image, pageRect: tileRect(key, pageSize: pageSize), geometry: geo, in: ctx)
             }
             drawTextHighlights(page: page, geometry: geo, in: ctx)
+            drawAnnotationOverlay(page: page, geometry: geo, in: ctx)
             if invertsColors {
                 // white - color: black text on white becomes white on black
                 ctx.setBlendMode(.difference)
@@ -582,6 +600,11 @@ final class DocumentView: NSView {
         guard let shortcut = Self.shortcut(for: event), !shortcut.isMenuShortcut,
             let command = CommandTable.command(for: shortcut)
         else { return false }
+        // Mac laptops have no ⌦; ⌫ is Back unless there is an annotation to delete.
+        if shortcut == Shortcut(.backspace), selectedAnnotation != nil {
+            deleteAnnotation(nil)
+            return true
+        }
         return sendThroughChain(Selector("\(command.action):"), from: self)
     }
 
@@ -603,6 +626,7 @@ final class DocumentView: NSView {
             case .pageDown?: .pageDown
             case .home?: .home
             case .end?: .end
+            case .deleteForward?: .delete
             case .f3?: .function(3)
             case .f5?: .function(5)
             case .f6?: .function(6)
@@ -614,10 +638,14 @@ final class DocumentView: NSView {
         return event.charactersIgnoringModifiers.flatMap { Shortcut.fromEvent(characters: $0, modifiers: modifiers) }
     }
 
-    /// Esc clears selection and search, then leaves auto-scroll, presentation
-    /// or full screen, in that order.
+    /// Esc leaves Draw mode, clears the annotation choice, then selection and
+    /// search, then leaves auto-scroll, presentation or full screen, in that order.
     override func cancelOperation(_ sender: Any?) {
-        if selection != nil || searchQuery != nil {
+        if isDrawing {
+            toggleDrawing(nil)
+        } else if selectedAnnotation != nil {
+            selectAnnotation(nil)
+        } else if selection != nil || searchQuery != nil {
             clearTextState()
         } else if autoScrollTask != nil {
             stopAutoScroll()
@@ -665,6 +693,8 @@ final class DocumentView: NSView {
             return onPointerMoved(nil)
         }
         updateCursor(page: hit.page, point: hit.point)
+        notePlace = hit
+        showNoteTip(page: hit.page, point: hit.point)
         onPointerMoved(hit)
     }
 
@@ -869,6 +899,7 @@ extension DocumentView: NSMenuItemValidation, NSToolbarItemValidation {
         case #selector(invertColors(_:)): invertsColors
         case #selector(toggleMatchCase(_:)): matchCase
         case #selector(toggleAutoScroll(_:)): autoScrollTask != nil
+        case #selector(toggleDrawing(_:)): isDrawing
         default: nil
         }
     }
@@ -882,6 +913,11 @@ extension DocumentView: NSMenuItemValidation, NSToolbarItemValidation {
         case #selector(navigateBack(_:)): canGoBack
         case #selector(navigateForward(_:)): canGoForward
         case #selector(copy(_:)), #selector(zoomToSelection(_:)): !(selection?.isEmpty ?? true)
+        case #selector(annotateHighlight(_:)), #selector(annotateUnderline(_:)), #selector(annotateStrikeOut(_:)):
+            engine.supportsAnnotations && !(selection?.isEmpty ?? true)
+        case #selector(annotateNote(_:)), #selector(toggleDrawing(_:)): engine.supportsAnnotations && !isPresenting
+        case #selector(editAnnotation(_:)): selectedAnnotationDetails.map { $0.kind != .other } ?? false
+        case #selector(deleteAnnotation(_:)): selectedAnnotation != nil
         default: true
         }
     }

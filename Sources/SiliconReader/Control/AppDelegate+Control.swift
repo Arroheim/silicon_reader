@@ -85,6 +85,22 @@ extension AppDelegate {
         case .toolbar:
             guard let name = request.name else { return .failure("toolbar needs name") }
             handled = front.useToolbarItem(name, text: request.text)
+        case .annotate:
+            guard let canvas = front.canvas, let page = request.page else {
+                return .failure("annotate needs a document and page")
+            }
+            switch request.name {
+            case "note": canvas.addNote(request.text ?? "", onPage: page, at: CGPoint(x: 100, y: 100))
+            case "stroke": canvas.addFreehand([[CGPoint(x: 40, y: 40), CGPoint(x: 160, y: 120)]], onPage: page)
+            case "pick": canvas.selectAnnotation(AnnotationReference(page: page, index: request.start ?? 0))
+            default: return .failure("unknown annotate step \(request.name ?? "nil")")
+            }
+        case .mouse:
+            guard let canvas = front.canvas, let page = request.page, let x = request.start, let y = request.end,
+                let name = request.name, let window = front.window, let geo = canvas.geometry(page)
+            else { return .failure("mouse needs a document, page, start, end and name") }
+            let point = canvas.convert(geo.canvasPoint(fromPage: CGPoint(x: x, y: y)), to: nil)
+            handled = Self.sendMouse(name, at: point, in: window, to: canvas)
         case .quit:
             Task { NSApp.terminate(nil) }
             return ControlResponse(ok: true)
@@ -145,6 +161,25 @@ extension AppDelegate {
         return canvas.handleKey(event)
     }
 
+    private static func sendMouse(
+        _ name: String, at point: CGPoint, in window: NSWindow, to canvas: DocumentView
+    ) -> Bool {
+        let types: [String: NSEvent.EventType] = [
+            "down": .leftMouseDown, "drag": .leftMouseDragged, "up": .leftMouseUp,
+        ]
+        guard let type = types[name],
+            let event = NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        else { return false }
+        switch type {
+        case .leftMouseDown: canvas.mouseDown(with: event)
+        case .leftMouseDragged: canvas.mouseDragged(with: event)
+        default: canvas.mouseUp(with: event)
+        }
+        return true
+    }
+
     /// "cmd", "shift", "option", "ctrl"; nil for anything else.
     private static func keyModifiers(_ names: [String]) -> KeyModifiers? {
         var modifiers: KeyModifiers = []
@@ -188,6 +223,7 @@ extension AppDelegate {
         case "return": return ("\r", nil)
         case "escape": return ("\u{1b}", nil)
         case "backspace": return ("\u{7f}", nil)
+        case "delete": return (function(NSDeleteFunctionKey), .delete)
         default: return name.count == 1 ? (name, nil) : nil
         }
     }
@@ -206,6 +242,7 @@ extension AppDelegate {
             document: controller.documentURL?.path,
             pageCount: canvas?.pageCount ?? 0,
             page: canvas?.currentPage ?? 0,
+            scrollOffset: Double(canvas?.viewport.minY ?? 0),
             zoom: canvas?.zoom,
             zoomPercent: Double(canvas?.layout.zoomPercent ?? 0),
             mode: canvas?.mode,
@@ -213,7 +250,8 @@ extension AppDelegate {
             selectedText: canvas?.selectedText ?? "",
             searchQuery: canvas?.searchQuery,
             match: canvas?.currentMatch.map {
-                ControlState.Match(page: $0.page, start: $0.range.lowerBound, end: $0.range.upperBound)
+                ControlState.Match(
+                    page: $0.page, start: $0.range.lowerBound, end: $0.range.upperBound, rect: $0.rects.first ?? .zero)
             },
             sidebarVisible: !(controller.currentDocument?.isSidebarCollapsed ?? true),
             sidebarMode: controller.currentDocument?.sidebarMode.rawValue,
@@ -222,6 +260,10 @@ extension AppDelegate {
             presenting: canvas?.isPresenting ?? false,
             canvasUnderToolbar: controller.currentDocument?.canvasUnderToolbar ?? false,
             failedPages: canvas?.failedPages ?? [],
+            annotations: canvas.map { canvas in canvas.annotations(onPage: canvas.currentPage).map(\.kind) } ?? [],
+            pickedAnnotation: canvas?.selectedAnnotation?.index,
+            hasUnsavedChanges: canvas?.engine.hasUnsavedChanges ?? false,
+            isDrawing: canvas?.isDrawing ?? false,
             invertsColors: canvas?.invertsColors ?? false,
             subtitle: controller.window?.subtitle ?? "",
             openDocuments: documents,

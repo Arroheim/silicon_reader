@@ -1,3 +1,6 @@
+import CoreGraphics
+import Foundation
+
 /// Messages of the debug control channel (`SiliconReader -control <socket>`),
 /// shared by the app and the e2e tests. One JSON object per line each way.
 ///
@@ -39,6 +42,13 @@ public struct ControlRequest: Codable, Sendable, Equatable {
         /// chooses that entry in the zoom drop-down list and "find" types it into
         /// the search field without searching.
         case toolbar
+        /// Canvas annotation steps that would otherwise need a dialog or the
+        /// mouse, by `name`: "note" adds `text` on `page`; "stroke" draws a
+        /// freehand diagonal on `page`; "pick" clicks annotation `start` of `page`.
+        case annotate
+        /// Send the canvas a mouse event at page point (`start`, `end`) of `page`;
+        /// `name` is "down", "drag" or "up".
+        case mouse
         case quit
     }
 
@@ -109,11 +119,14 @@ public struct ControlState: Codable, Sendable, Equatable {
         public var page: Int
         public var start: Int
         public var end: Int
+        /// Bounds of the match's first line, in page points.
+        public var rect: CGRect
 
-        public init(page: Int, start: Int, end: Int) {
+        public init(page: Int, start: Int, end: Int, rect: CGRect = .zero) {
             self.page = page
             self.start = start
             self.end = end
+            self.rect = rect
         }
     }
 
@@ -122,6 +135,8 @@ public struct ControlState: Codable, Sendable, Equatable {
     public var pageCount: Int
     /// 0-based current page.
     public var page: Int
+    /// How far the canvas is scrolled down, in canvas points.
+    public var scrollOffset: Double
     public var zoom: Zoom?
     public var zoomPercent: Double
     public var mode: ViewMode?
@@ -146,6 +161,12 @@ public struct ControlState: Codable, Sendable, Equatable {
     public var subtitle: String
     /// Document paths of all tabs and windows, front window's tabs first.
     public var openDocuments: [String]
+    /// Kinds of the annotations on the current page, in order.
+    public var annotations: [AnnotationKind]
+    /// Index into `annotations` of the picked one.
+    public var pickedAnnotation: Int?
+    public var hasUnsavedChanges: Bool
+    public var isDrawing: Bool
     /// Document paths of the front window's tabs in tab-bar order (empty strings for home tabs).
     public var frontTabs: [String]
     /// Number of separate windows (a window with tabs counts once).
@@ -153,20 +174,27 @@ public struct ControlState: Codable, Sendable, Equatable {
     public var settled: Bool
 
     public init(
-        document: String?, pageCount: Int, page: Int, zoom: Zoom?, zoomPercent: Double, mode: ViewMode?,
+        document: String?, pageCount: Int, page: Int, scrollOffset: Double = 0, zoom: Zoom?, zoomPercent: Double,
+        mode: ViewMode?,
         rotation: Int, selectedText: String, searchQuery: String?, match: Match?, sidebarVisible: Bool,
         sidebarMode: String? = nil, thumbnailPage: Int? = nil, panels: [String] = [], presenting: Bool,
-        canvasUnderToolbar: Bool = false, failedPages: [Int] = [], invertsColors: Bool, subtitle: String,
-        openDocuments: [String], frontTabs: [String] = [], windowCount: Int = 1, settled: Bool
+        canvasUnderToolbar: Bool = false, failedPages: [Int] = [], annotations: [AnnotationKind] = [],
+        pickedAnnotation: Int? = nil, hasUnsavedChanges: Bool = false, isDrawing: Bool = false, invertsColors: Bool,
+        subtitle: String, openDocuments: [String], frontTabs: [String] = [], windowCount: Int = 1, settled: Bool
     ) {
         self.canvasUnderToolbar = canvasUnderToolbar
         self.failedPages = failedPages
+        self.annotations = annotations
+        self.pickedAnnotation = pickedAnnotation
+        self.hasUnsavedChanges = hasUnsavedChanges
+        self.isDrawing = isDrawing
         self.sidebarMode = sidebarMode
         self.thumbnailPage = thumbnailPage
         self.panels = panels
         self.document = document
         self.pageCount = pageCount
         self.page = page
+        self.scrollOffset = scrollOffset
         self.zoom = zoom
         self.zoomPercent = zoomPercent
         self.mode = mode

@@ -80,6 +80,11 @@ extension PageText {
         return (onLine.last ?? closest) + 1
     }
 
+    /// Whether `point` is on a glyph or within `distance` of one.
+    public func isNearText(_ point: CGPoint, within distance: CGFloat) -> Bool {
+        rects.contains { !$0.isNull && $0.insetBy(dx: -distance, dy: -distance).contains(point) }
+    }
+
     /// Index of the glyph whose box contains `point`, if any.
     public func glyphIndex(at point: CGPoint) -> Int? {
         rects.indices.first { !rects[$0].isNull && rects[$0].contains(point) }

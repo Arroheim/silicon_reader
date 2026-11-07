@@ -9,6 +9,8 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
     case invalidPage(Int)
     case renderFailed(page: Int)
     case textExtractionFailed(page: Int)
+    case annotationFailed(page: Int)
+    case saveFailed(URL, reason: String)
 
     public var description: String {
         switch self {
@@ -19,6 +21,8 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
         case .invalidPage(let page): "Page \(page) is out of range"
         case .renderFailed(let page): "Failed to render page \(page)"
         case .textExtractionFailed(let page): "Failed to extract text from page \(page)"
+        case .annotationFailed(let page): "Failed to change annotations on page \(page)"
+        case .saveFailed(let url, let reason): "Cannot save \(url.lastPathComponent): \(reason)"
         }
     }
 }
@@ -60,9 +64,65 @@ public protocol DocumentEngine: AnyObject, Sendable {
     func links(onPage index: Int) throws -> [PageLink]
 
     func text(onPage index: Int) throws -> PageText
+
+    /// Whether this document can be annotated; the rest of the annotation
+    /// API is only called when it can. Defaults to false.
+    var supportsAnnotations: Bool { get }
+
+    /// Annotations made since the document was opened or saved over itself.
+    var hasUnsavedChanges: Bool { get }
+
+    func annotations(onPage index: Int) throws -> [PageAnnotation]
+
+    /// Marks up the text under `rects`, one per line. `kind` must be text markup.
+    @discardableResult
+    func addMarkup(_ kind: AnnotationKind, rects: [CGRect], onPage index: Int) throws -> Int
+
+    @discardableResult
+    func addNote(_ text: String, at point: CGPoint, onPage index: Int) throws -> Int
+
+    /// Adds one freehand annotation; each stroke is a run of connected points.
+    @discardableResult
+    func addFreehand(strokes: [[CGPoint]], onPage index: Int) throws -> Int
+
+    func setContents(_ text: String, ofAnnotation annotation: Int, onPage index: Int) throws
+
+    func removeAnnotation(_ annotation: Int, onPage index: Int) throws
+
+    /// Writes the document with its annotations to `url`, atomically, so
+    /// `url` may be the open file itself.
+    func save(to url: URL) throws
 }
 
 extension DocumentEngine {
+    public var supportsAnnotations: Bool { false }
+    public var hasUnsavedChanges: Bool { false }
+    public func annotations(onPage index: Int) throws -> [PageAnnotation] { [] }
+
+    public func addMarkup(_ kind: AnnotationKind, rects: [CGRect], onPage index: Int) throws -> Int {
+        throw EngineError.annotationFailed(page: index)
+    }
+
+    public func addNote(_ text: String, at point: CGPoint, onPage index: Int) throws -> Int {
+        throw EngineError.annotationFailed(page: index)
+    }
+
+    public func addFreehand(strokes: [[CGPoint]], onPage index: Int) throws -> Int {
+        throw EngineError.annotationFailed(page: index)
+    }
+
+    public func setContents(_ text: String, ofAnnotation annotation: Int, onPage index: Int) throws {
+        throw EngineError.annotationFailed(page: index)
+    }
+
+    public func removeAnnotation(_ annotation: Int, onPage index: Int) throws {
+        throw EngineError.annotationFailed(page: index)
+    }
+
+    public func save(to url: URL) throws {
+        throw EngineError.saveFailed(url, reason: "this format can't be saved")
+    }
+
     public func render(page index: Int, scale: CGFloat) throws -> CGImage {
         try render(page: index, scale: scale, region: nil)
     }

@@ -17,7 +17,7 @@ public enum Key: Hashable, Sendable {
     case character(Character)
     case up, down, left, right
     case pageUp, pageDown, home, end
-    case space, enter, backspace, escape, tab
+    case space, enter, backspace, delete, escape, tab
     case function(Int)
 }
 
@@ -65,6 +65,7 @@ public struct Shortcut: Hashable, Sendable {
         case .space: return " "
         case .enter: return "\r"
         case .backspace: return "\u{8}"
+        case .delete: return function(0xF728)
         case .escape: return "\u{1b}"
         case .tab: return "\t"
         case .up: return function(0xF700)
@@ -99,6 +100,7 @@ public struct Shortcut: Hashable, Sendable {
         case .space: text += "Space"
         case .enter: text += "Return"
         case .backspace: text += "⌫"
+        case .delete: text += "⌦"
         case .escape: text += "Esc"
         case .tab: text += "Tab"
         case .function(let n): text += "F\(n)"

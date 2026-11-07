@@ -16,6 +16,8 @@ protocol MainWindowHost: AnyObject {
     /// A document was shown in a window. `countsAsOpen` is false for reloads
     /// and session restore, which shouldn't raise it in "Frequently Read".
     func documentDidOpen(_ engine: any DocumentEngine, countsAsOpen: Bool)
+    /// Debug runs have nobody to answer "Save your changes?".
+    var asksAboutUnsavedChanges: Bool { get }
 }
 
 /// One window (tab) showing either the home page or a document, with
@@ -149,12 +151,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let controller = DocumentViewController(
             engine: engine, library: library, state: state ?? record?.state ?? settings.initialViewState,
             sidebarVisible: record?.sidebarVisible ?? currentDocument.map { !$0.isSidebarCollapsed })
-        controller.onStateChange = { [weak self] in self?.toolbarController.update() }
+        controller.onStateChange = { [weak self] in
+            self?.toolbarController.update()
+            self?.window?.isDocumentEdited = engine.hasUnsavedChanges
+        }
         controller.canvas.onSearchStatus = { [weak self] status in self?.window?.subtitle = status ?? "" }
         currentDocument = controller
         setContent(controller)
         window?.title = engine.url.lastPathComponent
         window?.representedURL = engine.url
+        window?.isDocumentEdited = engine.hasUnsavedChanges
         toolbarController.update()
         host?.documentDidOpen(engine, countsAsOpen: countsAsOpen)
         watch(engine.url)
@@ -192,9 +198,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Reopens the changed file keeping the view. A file caught mid-write
     /// fails to open silently; the next change event tries again.
     private func reloadAfterChange(of url: URL) {
-        guard documentURL == url, let state = canvas?.viewState,
-            let engine = try? DocumentOpener.open(url)
-        else { return }
+        guard documentURL == url else { return }
+        if currentDocument?.engine.hasUnsavedChanges == true {
+            return flash("The file changed on disk; your annotations aren't saved")
+        }
+        guard let state = canvas?.viewState, let engine = try? DocumentOpener.open(url) else { return }
         show(engine, state: state, countsAsOpen: false)
         flash("Reloaded: the file changed on disk")
     }
@@ -253,12 +261,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             flash(forward ? "No next file in this folder" : "No previous file in this folder")
             return
         }
+        guard confirmClosingDocument() else { return }
         if let engine = host?.openEngine(next) { show(engine) }
     }
 
     /// Re-reads the file from disk, keeping page, zoom and layout.
     @objc func reloadDocument(_ sender: Any?) {
-        guard let url = documentURL, let state = canvas?.viewState,
+        guard confirmClosingDocument(), let url = documentURL, let state = canvas?.viewState,
             let engine = host?.openEngine(url)
         else { return }
         show(engine, state: state, countsAsOpen: false)
@@ -282,6 +291,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let target = panel.url, target != url else { return }
             do {
+                if self.currentDocument?.engine.hasUnsavedChanges == true {
+                    try self.currentDocument?.engine.save(to: target)
+                    return
+                }
                 if FileManager.default.fileExists(atPath: target.path) {
                     try FileManager.default.removeItem(at: target)
                 }
@@ -289,6 +302,47 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             } catch {
                 NSAlert(error: error).runModal()
             }
+        }
+    }
+
+    /// Writes annotations into the open file.
+    @objc func saveAnnotations(_ sender: Any?) {
+        _ = saveAnnotationsToFile()
+    }
+
+    private func saveAnnotationsToFile() -> Bool {
+        guard let document = currentDocument else { return false }
+        // The file is replaced; a watcher on the old one would never fire again,
+        // and this change needs no reload.
+        stopWatching()
+        defer { watch(document.engine.url) }
+        do {
+            try document.engine.save(to: document.engine.url)
+        } catch {
+            NSAlert(error: error).runModal()
+            return false
+        }
+        window?.isDocumentEdited = false
+        flash("Annotations saved")
+        return true
+    }
+
+    /// Asks what to do with unsaved annotations before they would be lost;
+    /// false if the user would rather stay.
+    func confirmClosingDocument() -> Bool {
+        guard let engine = currentDocument?.engine, engine.hasUnsavedChanges,
+            host?.asksAboutUnsavedChanges == true
+        else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Save your annotations in “\(engine.url.lastPathComponent)”?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return saveAnnotationsToFile()
+        case .alertSecondButtonReturn: return true
+        default: return false
         }
     }
 
@@ -485,6 +539,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Like SumatraPDF, closing the last document shows the home page instead of closing the window.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard confirmClosingDocument() else { return false }
         let otherWindows = NSApp.windows.filter { $0 !== sender && $0.windowController is MainWindowController }
         if currentDocument != nil && otherWindows.allSatisfy({ !$0.isVisible }) {
             showHome()
@@ -517,6 +572,9 @@ extension MainWindowController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(togglePresentation(_:)) {
             item.state = presentation != nil ? .on : .off
+        }
+        if item.action == #selector(saveAnnotations(_:)) {
+            return currentDocument?.engine.hasUnsavedChanges == true
         }
         // Everything here acts on the shown document.
         return currentDocument != nil

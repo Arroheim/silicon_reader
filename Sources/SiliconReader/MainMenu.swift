@@ -44,6 +44,14 @@ enum MainMenu {
                 "CmdGoToLastPage", "CmdGoToPage", "-", "CmdNavigateBack", "CmdNavigateForward",
             ]
         ),
+        (
+            .annotate,
+            [
+                "CmdCreateAnnotHighlight", "CmdCreateAnnotUnderline", "CmdCreateAnnotStrikeOut", "-",
+                "CmdCreateAnnotText", "CmdCreateAnnotInk", "-", "CmdEditAnnotation", "CmdDeleteAnnotation", "-",
+                "CmdSaveAnnotations",
+            ]
+        ),
         (.favorites, ["CmdFavoriteAdd"]),
         (.window, ["CmdPrevTab", "CmdNextTab", "CmdMoveFrameFocus"]),
         (.help, ["CmdToggleKeyboardHelp"]),

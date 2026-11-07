@@ -23,6 +23,20 @@ struct TextSelectionTests {
         #expect(text.caretIndex(near: point) == expected)
     }
 
+    @Test(
+        "a point counts as near text within the given distance of a glyph",
+        arguments: [
+            (CGPoint(x: 5, y: 5), true),  // on "h"
+            (CGPoint(x: -8, y: 5), true),  // left of the line
+            (CGPoint(x: 5, y: 28), true),  // below the last line
+            (CGPoint(x: -11, y: 5), false),
+            (CGPoint(x: 200, y: 5), false),  // past the end of the line
+        ])
+    func nearText(point: CGPoint, expected: Bool) {
+        #expect(text.isNearText(point, within: 10) == expected)
+        #expect(!PageText.empty.isNearText(point, within: 10))
+    }
+
     @Test("has no caret in empty text")
     func emptyCaret() {
         #expect(PageText.empty.caretIndex(near: .zero) == nil)

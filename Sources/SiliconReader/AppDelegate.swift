@@ -164,6 +164,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        windows.allSatisfy { $0.confirmClosingDocument() } ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         guard persists else { return }
         windows.forEach { $0.saveDocumentState() }
@@ -379,6 +383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: MainWindowHost {
+    var asksAboutUnsavedChanges: Bool { !isSnapshot }
+
     func open(_ url: URL, from window: MainWindowController) -> MainWindowController? {
         openFile(url, from: window)
     }

@@ -3,23 +3,37 @@ import ReaderCore
 
 /// Text interaction on the canvas: selection, copy, links and find.
 extension DocumentView {
-    /// SumatraPDF's SelectionColor (#ffff00) at its default opacity, multiplied so text stays crisp.
-    static let selectionColor = NSColor(srgbRed: 1, green: 1, blue: 0, alpha: 0.5)
+    /// macOS's light selection blue (#b3d7ff), multiplied so text stays crisp. Not
+    /// Sumatra's yellow, which vanishes over a highlight; fixed because pages are
+    /// white in either appearance.
+    static let selectionColor = NSColor(srgbRed: 0xb3 / 255.0, green: 0xd7 / 255.0, blue: 1, alpha: 1)
     /// Every match on screen; the current one uses the selection color.
     static let matchColor = NSColor(srgbRed: 1, green: 0.85, blue: 0.2, alpha: 0.35)
     /// Mouse travel (points) before a press on a link counts as a drag.
     private static let dragThreshold: CGFloat = 3
+    /// How close to text (page points) a press starts a selection: enough to
+    /// cover line gaps and starting just left of a word. Further away it pans.
+    private static let textReach: CGFloat = 12
 
     // MARK: - Mouse
 
     func beginMouseInteraction(_ event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        let origin = viewport.origin
         guard let hit = pageHit(at: point) else {
             selection = nil
-            drag = .panning(start: event.locationInWindow, origin: origin)
+            drag = .panning(start: event.locationInWindow, origin: viewport.origin)
             needsDisplay = true
             return
+        }
+        if isDrawing {
+            currentStroke = [hit.point]
+            drag = .drawing(page: hit.page)
+            return
+        }
+        if event.clickCount == 2, let note = annotation(atPage: hit.page, point: hit.point), note.kind == .note {
+            selectAnnotation(AnnotationReference(page: hit.page, index: note.index))
+            drag = .none
+            return editAnnotation(nil)
         }
         let text = textStore.text(hit.page)
 
@@ -38,29 +52,40 @@ extension DocumentView {
 
         if let link = links(onPage: hit.page).first(where: { $0.rect.contains(hit.point) }) {
             drag = .link(link, start: event.locationInWindow)
-        } else if text.glyphIndex(at: hit.point) != nil, let caret = text.caretIndex(near: hit.point) {
-            let position = TextPosition(page: hit.page, index: caret)
-            selection = TextSelection(anchor: position, focus: position)
-            drag = .selecting
         } else {
-            // SumatraPDF pans when a drag starts away from text.
-            selection = nil
-            drag = .panning(start: event.locationInWindow, origin: origin)
+            beginDrag(page: hit.page, point: hit.point, start: event.locationInWindow)
         }
         needsDisplay = true
+    }
+
+    /// A drag from this page point selects the text near it; SumatraPDF pans when
+    /// a drag starts away from text, and here "away" leaves some reach.
+    private func beginDrag(page: Int, point: CGPoint, start: CGPoint) {
+        let text = textStore.text(page)
+        if text.isNearText(point, within: Self.textReach), let caret = text.caretIndex(near: point) {
+            let position = TextPosition(page: page, index: caret)
+            selection = TextSelection(anchor: position, focus: position)
+            selectionPointer = start
+            selectionPull = .zero
+            drag = .selecting
+        } else {
+            selection = nil
+            drag = .panning(start: start, origin: viewport.origin)
+        }
     }
 
     func continueMouseInteraction(_ event: NSEvent) {
         switch drag {
         case .selecting:
-            let point = convert(event.locationInWindow, from: nil)
-            guard var current = selection, let page = nearestPage(to: point), let geo = geometry(page) else { return }
-            let text = textStore.text(page)
-            let index = text.caretIndex(near: geo.pagePoint(fromCanvas: point)) ?? 0
-            current.focus = TextPosition(page: page, index: index)
-            selection = current
-            needsDisplay = true
-            autoscroll(with: event)
+            let location = event.locationInWindow
+            // Window coordinates go up, the canvas and mouse deltas go down.
+            selectionPull = EdgeScroll.pull(
+                selectionPull, at: convert(location, from: nil), in: viewport,
+                moved: CGPoint(x: event.deltaX, y: event.deltaY),
+                travelled: CGPoint(x: location.x - selectionPointer.x, y: selectionPointer.y - location.y))
+            selectionPointer = location
+            extendSelection()
+            startEdgeScroll()
         case .panning(let start, let origin):
             let location = event.locationInWindow
             // Content follows the hand: dragging down reveals what is above.
@@ -68,35 +93,90 @@ extension DocumentView {
             NSCursor.closedHand.set()
         case .link(_, let start):
             let location = event.locationInWindow
-            if hypot(location.x - start.x, location.y - start.y) > Self.dragThreshold {
-                drag = .panning(start: start, origin: viewport.origin)
+            if hypot(location.x - start.x, location.y - start.y) > Self.dragThreshold,
+                let hit = pageHit(at: convert(start, from: nil))
+            {
+                beginDrag(page: hit.page, point: hit.point, start: start)
                 continueMouseInteraction(event)
             }
+        case .drawing(let page):
+            guard let geo = geometry(page) else { return }
+            currentStroke.append(geo.pagePoint(fromCanvas: convert(event.locationInWindow, from: nil)))
+            needsDisplay = true
         case .none:
             break
         }
     }
 
+    /// Moves the selection's end to the pointer.
+    private func extendSelection() {
+        let point = convert(selectionPointer, from: nil)
+        guard var current = selection, let page = nearestPage(to: point), let geo = geometry(page) else { return }
+        let text = textStore.text(page)
+        let index = text.caretIndex(near: geo.pagePoint(fromCanvas: point)) ?? 0
+        current.focus = TextPosition(page: page, index: index)
+        selection = current
+        needsDisplay = true
+    }
+
+    /// Scrolls while the pointer stays at the viewport's edge, with no mouse
+    /// events coming in, as Sumatra's selection autoscroll does. Not
+    /// autoscroll(with:), which moved the page toward the start under a real
+    /// mouse with the pointer well inside the viewport.
+    private func startEdgeScroll() {
+        guard edgeScrollTask == nil else { return }
+        edgeScrollTask = Task { [weak self] in
+            while let self, case .selecting = self.drag {
+                let delta = EdgeScroll.delta(
+                    for: self.convert(self.selectionPointer, from: nil), in: self.viewport, pull: self.selectionPull)
+                if delta == .zero { break }
+                self.scroll(by: delta)
+                self.extendSelection()
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            self?.edgeScrollTask = nil
+        }
+    }
+
     func endMouseInteraction(_ event: NSEvent) {
+        var clicked = false
         switch drag {
         case .link(let link, _):
             go(to: link.destination)
         case .selecting:
-            if selection?.isEmpty == true { selection = nil }
+            clicked = selection?.isEmpty == true
+            if clicked { selection = nil }
             needsDisplay = true
-        case .panning, .none:
+        case .panning(let start, _):
+            let location = event.locationInWindow
+            clicked = hypot(location.x - start.x, location.y - start.y) <= Self.dragThreshold
+        case .drawing(let page):
+            finishStroke(onPage: page)
+        case .none:
             break
         }
         drag = .none
         let point = convert(event.locationInWindow, from: nil)
-        if let hit = pageHit(at: point) { updateCursor(page: hit.page, point: hit.point) }
+        let hit = pageHit(at: point)
+        if clicked {
+            // A press that didn't become a drag picks the annotation under it.
+            let picked = hit.flatMap { hit in
+                annotation(atPage: hit.page, point: hit.point).map {
+                    AnnotationReference(page: hit.page, index: $0.index)
+                }
+            }
+            selectAnnotation(picked)
+        }
+        if let hit { updateCursor(page: hit.page, point: hit.point) }
     }
 
     /// Pointing hand over links, I-beam over text (pages whose text is already known).
     func updateCursor(page: Int, point: CGPoint) {
-        if links(onPage: page).contains(where: { $0.rect.contains(point) }) {
+        if isDrawing {
+            NSCursor.crosshair.set()
+        } else if links(onPage: page).contains(where: { $0.rect.contains(point) }) {
             NSCursor.pointingHand.set()
-        } else if textStore.cached(page)?.glyphIndex(at: point) != nil {
+        } else if textStore.cached(page)?.isNearText(point, within: Self.textReach) == true {
             NSCursor.iBeam.set()
         } else {
             NSCursor.arrow.set()

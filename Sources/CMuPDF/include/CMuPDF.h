@@ -125,4 +125,55 @@ typedef struct {
 sr_text *sr_doc_page_text(sr_doc *doc, int page);
 void sr_text_free(sr_text *text);
 
+/* ----- annotations (PDF only) ----- */
+
+typedef enum {
+    SR_ANNOT_HIGHLIGHT,
+    SR_ANNOT_UNDERLINE,
+    SR_ANNOT_STRIKEOUT,
+    SR_ANNOT_NOTE,
+    SR_ANNOT_INK,
+    SR_ANNOT_OTHER
+} sr_annot_kind;
+
+typedef struct {
+    float x, y;
+} sr_point;
+
+typedef struct {
+    int index; /* pass back to set_contents / delete; valid until the page changes */
+    sr_annot_kind kind;
+    sr_rect rect;
+    char *contents; /* UTF-8; NULL when empty */
+} sr_annot;
+
+typedef struct {
+    sr_annot *items;
+    int count;
+} sr_annots;
+
+/* 1 if the document can hold annotations. */
+int sr_doc_supports_annotations(sr_doc *doc);
+/* 1 if annotations changed since the document was opened or last saved over itself. */
+int sr_doc_has_unsaved_changes(sr_doc *doc);
+
+/* Annotations a reader can see; links, form fields and popups are left out.
+   NULL on error; empty when the page has none. */
+sr_annots *sr_doc_page_annots(sr_doc *doc, int page);
+void sr_annots_free(sr_annots *annots);
+
+/* The add functions return the new annotation's index, or -1 on error. */
+int sr_doc_add_markup(sr_doc *doc, int page, sr_annot_kind kind, const sr_rect *rects, int count);
+int sr_doc_add_note(sr_doc *doc, int page, sr_point at, const char *text);
+/* `points` holds every stroke in a row; `lengths[i]` is the size of stroke i. */
+int sr_doc_add_ink(sr_doc *doc, int page, const sr_point *points, const int *lengths, int strokes);
+/* Return 0 on success. */
+int sr_doc_set_annot_contents(sr_doc *doc, int page, int index, const char *text);
+int sr_doc_delete_annot(sr_doc *doc, int page, int index);
+
+/* Writes the whole document with its annotations to path (never the open file's
+   own path: write elsewhere and rename). `saved_over_self` clears the unsaved
+   state. Returns 0 on success, otherwise writes a message into err. */
+int sr_doc_save(sr_doc *doc, const char *path, int saved_over_self, char *err, size_t errlen);
+
 #endif /* CMUPDF_H */

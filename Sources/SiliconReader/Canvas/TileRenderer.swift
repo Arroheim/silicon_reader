@@ -53,6 +53,8 @@ final class TileRenderer {
     private var pending: [TileKey] = []
     private var running: Set<TileKey> = []
     private var failed: Set<TileKey> = []
+    /// Tiles rendering while their page changed; what they return is out of date.
+    private var outdated: Set<TileKey> = []
 
     /// Called on the main actor when a tile becomes available or fails to render.
     var onTileReady: ((TileKey) -> Void)?
@@ -82,6 +84,16 @@ final class TileRenderer {
     func request(_ keys: [TileKey]) {
         pending = keys.filter { cache[$0] == nil && !running.contains($0) && !failed.contains($0) }
         pump()
+    }
+
+    /// Forgets everything rendered for `page` after its content changed.
+    func invalidate(page: Int) {
+        for (key, entry) in cache where key.page == page {
+            cache[key] = nil
+            cacheBytes -= entry.cost
+        }
+        failed = failed.filter { $0.page != page }
+        outdated.formUnion(running.filter { $0.page == page })
     }
 
     /// The best cached image of a whole page at any scale, for drawing while
@@ -118,6 +130,11 @@ final class TileRenderer {
 
     private func finish(_ key: TileKey, result: Result<CGImage, any Error>) {
         running.remove(key)
+        if outdated.remove(key) != nil {
+            // The redraw asks for this tile again.
+            onTileReady?(key)
+            return pump()
+        }
         switch result {
         case .success(let image):
             clock += 1
