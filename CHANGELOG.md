@@ -10,7 +10,10 @@ publishes the DMG with this section as the release notes.
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-11-07
+## [1.1.1] - 2026-11-07
+
+Version 1.1.0 was tagged but never published: its tests caught the file watcher bug
+below. This release contains everything it had.
 
 ### Added
 
@@ -37,6 +40,8 @@ publishes the DMG with this section as the release notes.
   edges. Holding a selection at an edge scrolls that way, without moving the mouse, and
   the harder you pull, even against the edge of the screen, the faster it goes.
 - Text inside a link can be selected: a drag selects it, a click still follows the link.
+- A document no longer reloads when only the file's metadata changes, as with Spotlight
+  or Finder tags. Such a reload ended presentation mode and undid inverted colors.
 
 ## [1.0.4] - 2026-11-07
 

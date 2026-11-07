@@ -62,8 +62,8 @@ finds go here.
       https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.2
 - [x] Released 1.0.4 (single keys in menus, placeholder for broken pages; 1.0.3 was
       tagged but never published): https://github.com/Arroheim/silicon_reader/releases/tag/v1.0.4
-- [x] Released 1.1.0 (PDF annotations, selection reworked):
-      https://github.com/Arroheim/silicon_reader/releases/tag/v1.1.0
+- [x] Released 1.1.1 (PDF annotations, selection reworked; 1.1.0 was tagged but never
+      published): https://github.com/Arroheim/silicon_reader/releases/tag/v1.1.1
 - [x] Local builds record the real SDK (they used to link as "sdk 14.0" and so never
       showed the macOS 26+ look); `make app` checks minos 14.0 / SDK / system-only
       libraries with `scripts/check-binary.sh`
