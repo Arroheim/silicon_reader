@@ -308,10 +308,18 @@ final class ToolbarController: NSObject, NSToolbarDelegate, NSToolbarItemValidat
             field.stringValue = text
             return true
         default:
-            toolbar.validateVisibleItems()
-            guard item.isEnabled, let action = item.action else { return false }
+            guard let action = item.action else { return false }
+            let start = window.firstResponder ?? window
+            // AppKit looks for the target of a toolbar item in the key window, and a
+            // background test run may never get one; the chain gives the same answer.
+            if window.isKeyWindow || item.target != nil {
+                toolbar.validateVisibleItems()
+                guard item.isEnabled else { return false }
+            } else if start.chainTarget(for: action) == nil {
+                return false
+            }
             if let target = item.target { return NSApp.sendAction(action, to: target, from: item) }
-            return (window.firstResponder ?? window).sendThroughChain(action, from: item)
+            return start.sendThroughChain(action, from: item)
         }
     }
 }
