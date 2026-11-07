@@ -39,7 +39,7 @@ MUPDF_FLAGS := build=release HAVE_X11=no HAVE_GLUT=no HAVE_CURL=no \
 	extract=no barcode=no tesseract=no XCFLAGS=-mmacosx-version-min=$(MIN_MACOS)
 
 .PHONY: help deps build test test-swift60 e2e e2e-prebuilt lint format app dmg release smoke smoke-prebuilt check-library run \
-	clean distclean
+	qa-files qa-heavy clean distclean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z0-9-]+:.*## / {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -106,6 +106,20 @@ release: ## Tag a release: make release VERSION=1.0.0 (checks tree, changelog an
 	$(MAKE) lint test e2e test-swift60
 	git tag -a "v$(VERSION)" -m "Silicon Reader $(VERSION)"
 	@echo "Tagged v$(VERSION). Publish with: git push origin v$(VERSION)"
+
+QA_DIR := $(BUILD_DIR)/qa
+QA_PDF := $(MUPDF_SRC)/thirdparty/lcms2/doc/LittleCMS2.19 tutorial.pdf
+
+qa-files: ## Files for docs/MANUAL_QA.md in build/qa: annotations, password (test) and truncated PDFs, a DjVu with a broken page
+	@mkdir -p "$(QA_DIR)"
+	cp "$(QA_PDF)" "$(QA_DIR)/annotations.pdf"
+	swift scripts/make-password-pdf.swift "$(QA_PDF)" "$(QA_DIR)/password.pdf" test
+	head -c 200000 "$(QA_PDF)" > "$(QA_DIR)/truncated.pdf"
+	cp Tests/ReaderCoreTests/Fixtures/broken-page.djvu "$(QA_DIR)/"
+	@ls -1 "$(QA_DIR)"
+
+qa-heavy: ## 1000-page scan-like PDF and DjVu in build/qa (needs DjVuLibre and ImageMagick; minutes, about 1.5 GB)
+	scripts/make-heavy-files.sh "$(QA_DIR)"
 
 SMOKE_DOCS := Tests/ReaderCoreTests/Fixtures/djvu2spec.djvu \
 	"$(MUPDF_SRC)/thirdparty/lcms2/doc/LittleCMS2.19 tutorial.pdf"
